@@ -1,6 +1,7 @@
 import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiRequest, queryClient } from '@/lib/queryClient';
+import { login, signup } from '@/lib/binding/actions/authActions';
+import { enrollInCourse, fetchCourseSections } from '@/lib/binding/actions/courseActions';
 import EnrollmentGateway from '@/components/EnrollmentGateway';
 import { useToast } from '@/hooks/use-toast';
 import { buildApiUrl } from '@/lib/api';
@@ -22,8 +23,8 @@ export default function EnrollmentPage() {
   // Login mutation
   const loginMutation = useMutation({
     mutationFn: async ({ email, password }: { email: string; password: string }) => {
-      const response = await apiRequest('POST', `/api/auth/login`, { email, password });
-      return response.json();
+      // ✅ UPDATED: Use authActions
+      return await login(email, password);
     },
     onSuccess: async (data) => {
       toast({
@@ -34,13 +35,21 @@ export default function EnrollmentPage() {
       // Enroll the user in the course
       if (courseInfo?.course?.id) {
         try {
-          await apiRequest('POST', `/api/courses/${courseInfo.course.id}/enroll`);
+          // Construct session strictly from the login response
+          // We cast the role to be compatible with StoredSession interface
+          const session = {
+            ...data.session,
+            role: data.user?.role || "learner",
+            userId: data.user?.id,
+            email: data.user?.email,
+            fullName: data.user?.fullName
+          };
+
+          // ✅ UPDATED: Use courseActions
+          await enrollInCourse(courseInfo.course.id, session);
 
           // Find first lesson to redirect to
-          const sectionsResponse = await fetch(buildApiUrl(`/api/courses/${courseInfo.course.id}/sections`), {
-            credentials: 'include'
-          });
-          const sections = await sectionsResponse.json();
+          const sections = await fetchCourseSections(courseInfo.course.id, session);
           if (sections?.[0]?.lessons?.[0]) {
             setLocation(`/course/${courseInfo.course.id}/learn/${sections[0].lessons[0].slug}`);
           } else {
@@ -66,14 +75,14 @@ export default function EnrollmentPage() {
     mutationFn: async ({ email, password, name, phone }: { email: string; password: string; name: string; phone: string }) => {
       // Generate username from email for now
       const username = email.split('@')[0];
-      const response = await apiRequest('POST', `/api/auth/signup`, {
+      // ✅ UPDATED: Use authActions
+      return await signup({
         email,
         password,
         fullName: name,
         username,
         phone,
       });
-      return response.json();
     },
     onSuccess: async () => {
       toast({

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useParams } from "wouter";
 import { Trophy, Star } from "lucide-react";
-import { buildApiUrl } from "@/lib/api";
+import { fetchCourse } from '@/lib/binding/actions/courseActions';
 import { readStoredSession } from "@/utils/session";
 
 type CourseSummary = {
@@ -140,11 +140,12 @@ const CongratsPage = () => {
     let mounted = true;
     const loadCourse = async () => {
       try {
-        const res = await fetch(buildApiUrl(`/api/courses/${courseKey}`));
-        if (!res.ok) throw new Error("Unable to load course details");
-        const payload = (await res.json()) as { course?: CourseSummary };
-        if (mounted) {
-          setCourse(payload.course ?? {});
+        // ✅ UPDATED: Use courseActions
+        if (courseKey) {
+          const courseData = await fetchCourse(courseKey);
+          if (mounted) {
+            setCourse(courseData);
+          }
         }
       } catch {
         // ignore – fallback strings already provided

@@ -8,7 +8,7 @@ import SuccessStep from '@/components/registration/SuccessStep'
 import CourseSelection from '@/components/registration/CourseSelection'
 import SpecificCourseSelection from '@/components/registration/SpecificCourseSelection'
 import { StudentData, Answer } from '@/types/registration'
-import { fetchOfferings } from '@/lib/registrationApi'
+import { fetchOfferings } from '@/lib/binding/actions/registrationActions';
 
 const STORAGE_KEY = 'ottolearn_reg_draft'
 
@@ -116,20 +116,20 @@ function RegistrationPage() {
 
     const handleRegistrationSubmit = (data: StudentData): void => {
         setRegistrationData(data)
-        const slug = data.specificCourse.toLowerCase().replace(/ /g, '-')
+        const slug = (data.specificCourse || '').toLowerCase().replace(/ /g, '-')
         setLocation(`/registration/${data.programType}/${slug}/assessment`)
     }
 
     const handleAssessmentSubmit = (answers: Answer): void => {
         setAssessmentAnswers(answers)
-        const slug = registrationData.specificCourse.toLowerCase().replace(/ /g, '-')
+        const slug = (registrationData.specificCourse || '').toLowerCase().replace(/ /g, '-')
         // Clear localStorage on success
         localStorage.removeItem(STORAGE_KEY)
         setLocation(`/registration/${registrationData.programType}/${slug}/success`)
     }
 
     const goBack = (targetStep: number) => {
-        const slug = registrationData.specificCourse.toLowerCase().replace(/ /g, '-')
+        const slug = (registrationData.specificCourse || '').toLowerCase().replace(/ /g, '-')
 
         switch (targetStep) {
             case 0:

@@ -1,5 +1,6 @@
 import { buildApiUrl } from '@/lib/api';
 import type { StoredSession } from '@/types/session';
+import { refreshToken as refreshTokenAction } from '@/lib/binding/actions/authActions';
 
 const STORAGE_KEY = 'session';
 const USER_KEY = 'user';
@@ -64,18 +65,10 @@ export const requestSessionRefresh = async (session: StoredSession): Promise<Sto
   }
 
   try {
-    const response = await fetch(buildApiUrl('/auth/refresh'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken: session.refreshToken })
-    });
+    // ✅ UPDATED: Use authActions instead of direct fetch
+    const data = await refreshTokenAction(session.refreshToken);
+    const refreshed = data.session;
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = await response.json();
-    const refreshed = payload?.session;
     if (!refreshed?.accessToken || !refreshed?.accessTokenExpiresAt) {
       return null;
     }

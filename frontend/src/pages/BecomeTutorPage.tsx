@@ -17,6 +17,7 @@ import { motion, useScroll, useTransform } from 'framer-motion';
 import { buildApiUrl } from "@/lib/api";
 import { writeStoredSession, resetSessionHeartbeat } from '@/utils/session';
 import type { StoredSession } from '@/types/session';
+import { loginTutor, submitTutorApplication } from '@/lib/binding/actions/tutorActions';
 
 // --- 1. TYPES & INTERFACES ---
 interface TutorApplication {
@@ -239,18 +240,11 @@ const BecomeTutor: React.FC = () => {
     setIsLoggingIn(true);
 
     try {
-      const response = await fetch(buildApiUrl("/api/tutors/login"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: loginEmail.trim().toLowerCase(), password: loginPassword }),
+      // ✅ UPDATED: Use tutorActions instead of direct fetch
+      const payload = await loginTutor({
+        email: loginEmail.trim().toLowerCase(),
+        password: loginPassword
       });
-
-      if (!response.ok) {
-        const error = await response.json().catch(() => null);
-        throw new Error(error?.message ?? "Wrong email or wrong password");
-      }
-
-      const payload = await response.json();
       const session: StoredSession = {
         accessToken: payload.session?.accessToken,
         accessTokenExpiresAt: payload.session?.accessTokenExpiresAt,
@@ -306,16 +300,8 @@ const BecomeTutor: React.FC = () => {
     };
 
     try {
-      const res = await fetch(buildApiUrl("/api/tutor-applications"), {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const error = await res.json().catch(() => null);
-        throw new Error(error?.message ?? "Failed to submit tutor application.");
-      }
+      // ✅ UPDATED: Use tutorActions instead of direct fetch
+      await submitTutorApplication(payload);
 
       setSubmitMessage("Proposal submitted successfully! Our team will be in touch soon.");
       setFormData({ ...initialFormState });

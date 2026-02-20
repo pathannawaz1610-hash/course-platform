@@ -1,7 +1,8 @@
 import express from "express";
-import { prisma } from "../services/prisma";
+import { EnrollmentRepository } from "../repositories/implementations/EnrollmentRepository";
 
 export const registrationsRouter = express.Router();
+const enrollmentRepo = new EnrollmentRepository();
 
 const PROGRAM_TYPES = new Set(["cohort", "ondemand", "workshop"]);
 
@@ -15,9 +16,7 @@ registrationsRouter.get("/offerings", async (req, res, next) => {
       return res.status(400).json({ error: "courseSlug or courseId is required" });
     }
 
-    const course = courseId
-      ? await prisma.course.findUnique({ where: { courseId } })
-      : await prisma.course.findUnique({ where: { slug: courseSlug! } });
+    const course = await enrollmentRepo.findCourseForRegistration(courseSlug, courseId);
 
     if (!course) {
       return res.status(404).json({ error: "Course not found" });
@@ -27,14 +26,7 @@ registrationsRouter.get("/offerings", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid programType" });
     }
 
-    const offerings = await prisma.courseOffering.findMany({
-      where: {
-        courseId: course.courseId,
-        isActive: true,
-        ...(programType ? { programType: programType as any } : {}),
-      },
-      orderBy: { createdAt: "asc" },
-    });
+    const offerings = await enrollmentRepo.getOfferings(course.courseId, programType);
 
     return res.json({ course, offerings });
   } catch (error) {
@@ -55,20 +47,7 @@ registrationsRouter.get("/assessment-questions", async (req, res, next) => {
       return res.status(400).json({ error: "Invalid programType" });
     }
 
-    const questions = await prisma.assessmentQuestion.findMany({
-      where: {
-        isActive: true,
-        AND: [
-          {
-            OR: [{ offeringId: null }, { offeringId }],
-          },
-          {
-            OR: [{ programType: "all" }, { programType: programType as any }],
-          },
-        ],
-      },
-      orderBy: { questionNumber: "asc" },
-    });
+    const questions = await enrollmentRepo.getAssessmentQuestions(offeringId, programType);
 
     return res.json({ questions });
   } catch (error) {
@@ -110,14 +89,21 @@ registrationsRouter.post("/", async (req, res, next) => {
       return res.status(400).json({ error: "Missing required fields", fields: missingFields });
     }
 
-    const offering = await prisma.courseOffering.findUnique({ where: { offeringId } });
-    if (!offering) {
-      return res.status(404).json({ error: "Offering not found" });
-    }
+    // Since we don't have getOfferingById in repo (only getOfferings by course), 
+    // we might skip offering check or add it to repo if strictly needed.
+    // However, FK constraint will fail if offeringId is invalid during create.
+    // Or we can query DB. But for now, let's assume valid ID or catch error.
+    // Wait, the original code did:
+    // const offering = await prisma.courseOffering.findUnique({ where: { offeringId } });
 
-    const existing = await prisma.registration.findFirst({
-      where: { email, offeringId },
-    });
+    // I should add getOfferingById to Repo if I want to maintain this 404 check, 
+    // or just rely on getRegistration check which uses email+offeringId.
+    // But getRegistration doesn't check if offering exists.
+    // I'll skip the explicit offering existence check for now as it's partial redundancy 
+    // (create will fail with FK error if offering missing).
+    // optimizing: just find existing registration.
+
+    const existing = await enrollmentRepo.getRegistration(email, offeringId);
 
     const payload = {
       offeringId,
@@ -138,15 +124,19 @@ registrationsRouter.post("/", async (req, res, next) => {
       assessmentSubmittedAt: assessmentSubmittedAt ? new Date(assessmentSubmittedAt) : null,
     };
 
-    const registration = existing
-      ? await prisma.registration.update({
-          where: { registrationId: existing.registrationId },
-          data: payload,
-        })
-      : await prisma.registration.create({ data: payload });
+    let registration;
+    if (existing) {
+      registration = await enrollmentRepo.updateRegistration(existing.registrationId, payload);
+    } else {
+      registration = await enrollmentRepo.createRegistration(payload);
+    }
 
     return res.status(existing ? 200 : 201).json({ registration });
   } catch (error: any) {
+    // If we want to catch "foreign key constraint failed" for offeringId:
+    if (error.code === 'P2003') {
+      return res.status(404).json({ error: "Offering not found" });
+    }
     return next(error);
   }
 });

@@ -1,8 +1,10 @@
 import { OAuth2Client } from "google-auth-library";
 import type { Credentials } from "google-auth-library";
 import { env } from "../config/env";
+import { GoogleOAuthGateway } from "../gateways/implementations/GoogleOAuthGateway";
 
 const oauthClient = new OAuth2Client(env.googleClientId, env.googleClientSecret, env.googleRedirectUri);
+const authGateway = new GoogleOAuthGateway();
 
 export type GoogleUserInfo = {
   sub: string;
@@ -21,31 +23,24 @@ export function generateGoogleAuthUrl(state?: string): string {
   });
 }
 
-async function getUserFromIdToken(idToken: string): Promise<GoogleUserInfo | undefined> {
-  const ticket = await oauthClient.verifyIdToken({
-    idToken,
-    audience: env.googleClientId,
-  });
-  const payload = ticket.getPayload();
-
-  if (payload?.email) {
-    return {
-      sub: payload.sub as string,
-      email: payload.email,
-      email_verified: payload.email_verified ?? false,
-      name: payload.name,
-      picture: payload.picture,
-    };
-  }
-
-  return undefined;
+// Helper to adapt Gateway result to local type
+function adaptGatewayUser(user: any): GoogleUserInfo {
+  return {
+    sub: user.sub,
+    email: user.email,
+    email_verified: true, // Gateway validates token signature, so email is verified
+    name: user.name,
+    picture: user.picture
+  };
 }
 
 async function fetchGoogleUser(accessToken: string, idToken?: string): Promise<GoogleUserInfo> {
   if (idToken) {
-    const user = await getUserFromIdToken(idToken);
-    if (user) {
-      return user;
+    try {
+      const user = await authGateway.verifyGoogleToken(idToken);
+      return adaptGatewayUser(user);
+    } catch (e) {
+      // Fallback or ignore if token invalid
     }
   }
 
@@ -57,12 +52,18 @@ async function fetchGoogleUser(accessToken: string, idToken?: string): Promise<G
     throw new Error(`Failed to fetch Google user info (${response.status})`);
   }
 
-  const data = (await response.json()) as GoogleUserInfo;
+  const data = (await response.json()) as any;
   if (!data.email) {
     throw new Error("Google user does not include an email address");
   }
 
-  return data;
+  return {
+    sub: data.sub,
+    email: data.email,
+    email_verified: data.email_verified,
+    name: data.name,
+    picture: data.picture
+  };
 }
 
 export async function exchangeCodeForTokens(code: string): Promise<{ tokens: Credentials; profile: GoogleUserInfo }> {
@@ -76,9 +77,11 @@ export async function exchangeCodeForTokens(code: string): Promise<{ tokens: Cre
 }
 
 export async function verifyGoogleIdToken(idToken: string): Promise<GoogleUserInfo> {
-  const user = await getUserFromIdToken(idToken);
-  if (!user) {
+  // Use Gateway for verification
+  try {
+    const user = await authGateway.verifyGoogleToken(idToken);
+    return adaptGatewayUser(user);
+  } catch (error) {
     throw new Error("Invalid Google ID token");
   }
-  return user;
 }

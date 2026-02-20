@@ -2,12 +2,8 @@ import express from "express";
 import { z } from "zod";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
 import { asyncHandler } from "../utils/asyncHandler";
-import {
-  addItemToCart,
-  clearCartForUser,
-  getCartForUser,
-  removeItemFromCart,
-} from "../services/cartService";
+import { CartRepository } from "../repositories/implementations/CartRepository";
+import type { CartItemAddPayload } from "../repositories/interfaces/ICartRepository";
 
 const addCourseSchema = z.object({
   course: z.object({
@@ -25,6 +21,7 @@ const addCourseSchema = z.object({
 });
 
 const cartRouter = express.Router();
+const cartRepo = new CartRepository();
 
 cartRouter.use(requireAuth);
 
@@ -37,7 +34,7 @@ cartRouter.get(
       return;
     }
 
-    const items = await getCartForUser(auth.userId);
+    const items = await cartRepo.getCartItems(auth.userId);
     res.status(200).json({ items });
   }),
 );
@@ -60,7 +57,13 @@ cartRouter.post(
       return;
     }
 
-    const items = await addItemToCart(auth.userId, parsed.data.course);
+    // Map strict Zod output to Repository Payload
+    // Zod output has optional fields that match CartItemAddPayload structure
+    const payload: CartItemAddPayload = parsed.data.course;
+
+    await cartRepo.addItem(auth.userId, payload);
+    const items = await cartRepo.getCartItems(auth.userId);
+
     res.status(200).json({ items });
   }),
 );
@@ -80,7 +83,9 @@ cartRouter.delete(
       return;
     }
 
-    const items = await removeItemFromCart(auth.userId, courseSlug);
+    await cartRepo.removeItem(auth.userId, courseSlug);
+    const items = await cartRepo.getCartItems(auth.userId);
+
     res.status(200).json({ items });
   }),
 );
@@ -94,7 +99,7 @@ cartRouter.delete(
       return;
     }
 
-    await clearCartForUser(auth.userId);
+    await cartRepo.clearCart(auth.userId);
     res.status(204).send();
   }),
 );

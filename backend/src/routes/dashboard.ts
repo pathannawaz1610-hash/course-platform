@@ -1,51 +1,12 @@
 import express from "express";
-import { Prisma } from "@prisma/client";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
-import { prisma } from "../services/prisma";
+import { DashboardRepository } from "../repositories/implementations/DashboardRepository";
+import { DashboardSummary } from "../repositories/interfaces/IDashboardRepository";
 
-type DashboardSummary = {
-  user: {
-    fullName: string;
-    email: string;
-  };
-  stats: {
-    sessionsThisWeek: number;
-    lastActiveAt: string | null;
-  };
-  resumeCourse: {
-    id: string;
-    courseSlug: string | null;
-    title: string;
-    progress: number;
-    lastAccessedModule: string;
-    lastLessonSlug: string | null;
-  } | null;
-  cohorts: Array<{
-    id: string;
-    title: string;
-    courseSlug: string | null;
-    status: "Upcoming" | "Ongoing" | "Completed";
-    progress: number;
-    nextSessionDate: string | null;
-  }>;
-  onDemand: Array<{
-    id: string;
-    title: string;
-    courseSlug: string | null;
-    progress: number;
-    lastAccessedModule: string;
-    lastLessonSlug: string | null;
-  }>;
-  workshops: Array<{
-    id: string;
-    title: string;
-    date: string;
-    time: string;
-    isJoined: boolean;
-  }>;
-  completed: Array<{ title: string; date: string }>;
-  upcoming: Array<{ id: string; title: string; releaseDate: string; category: string }>;
-};
+// Types retained for response structure (View Model) - separation of concerns
+// The repository returns raw data or domain entities, the route constructs the view model.
+
+const dashboardRepo = new DashboardRepository();
 
 const formatDate = (value: Date | null | undefined): string | null => {
   if (!value) {
@@ -107,10 +68,7 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { userId: auth.userId },
-      select: { fullName: true, email: true },
-    });
+    const user = await dashboardRepo.getUserProfile(auth.userId);
 
     if (!user) {
       res.status(404).json({ message: "User not found" });
@@ -118,36 +76,8 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
     }
 
     const [enrollments, cohortMemberships] = await Promise.all([
-      prisma.enrollment.findMany({
-        where: { userId: auth.userId },
-        include: {
-          course: {
-            select: {
-              courseId: true,
-              courseName: true,
-              slug: true,
-              category: true,
-            },
-          },
-        },
-      }),
-      prisma.cohortMember.findMany({
-        where: { userId: auth.userId },
-        include: {
-          cohort: {
-            include: {
-              course: {
-                select: {
-                  courseId: true,
-                  courseName: true,
-                  slug: true,
-                  category: true,
-                },
-              },
-            },
-          },
-        },
-      }),
+      dashboardRepo.getEnrollments(auth.userId),
+      dashboardRepo.getCohortMemberships(auth.userId),
     ]);
 
     const cohortCourseIds = new Set(
@@ -163,25 +93,7 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
       ]),
     );
 
-    const progressRows = courseIds.length
-      ? await prisma.topicProgress.findMany({
-          where: {
-            userId: auth.userId,
-            topic: { courseId: { in: courseIds } },
-          },
-          select: {
-            isCompleted: true,
-            updatedAt: true,
-            topic: {
-              select: {
-                courseId: true,
-                moduleNo: true,
-                topicName: true,
-              },
-            },
-          },
-        })
-      : [];
+    const progressRows = await dashboardRepo.getTopicProgress(auth.userId, courseIds);
 
     const latestByCourse = new Map<string, { updatedAt: Date; moduleNo: number; topicName: string }>();
 
@@ -201,45 +113,8 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
       }
     });
 
-    const quizSectionTotals = courseIds.length
-      ? await prisma.$queryRaw<{ course_id: string; section_count: number | bigint }[]>(
-          Prisma.sql`
-            SELECT course_id, COUNT(*)::bigint AS section_count
-            FROM (
-              SELECT DISTINCT course_id, module_no, topic_pair_index
-              FROM quiz_questions
-              WHERE course_id IN (${Prisma.join(courseIds.map((id) => Prisma.sql`${id}::uuid`))})
-            ) AS sections
-            GROUP BY course_id
-          `,
-        )
-      : [];
-
-    const quizSectionPassed = courseIds.length
-      ? await prisma.$queryRaw<{ course_id: string; passed_count: number | bigint }[]>(
-          Prisma.sql`
-            WITH latest AS (
-              SELECT DISTINCT ON (course_id, module_no, topic_pair_index)
-                course_id,
-                module_no,
-                topic_pair_index,
-                status
-              FROM quiz_attempts
-              WHERE user_id = ${auth.userId}::uuid
-                AND course_id IN (${Prisma.join(courseIds.map((id) => Prisma.sql`${id}::uuid`))})
-              ORDER BY course_id,
-                       module_no,
-                       topic_pair_index,
-                       completed_at DESC NULLS LAST,
-                       updated_at DESC NULLS LAST
-            )
-            SELECT course_id, COUNT(*)::bigint AS passed_count
-            FROM latest
-            WHERE status = 'passed'
-            GROUP BY course_id
-          `,
-        )
-      : [];
+    const quizSectionTotals = await dashboardRepo.getQuizSectionTotals(courseIds);
+    const quizSectionPassed = await dashboardRepo.getQuizSectionPassed(auth.userId, courseIds);
 
     const totalSectionsByCourse = new Map<string, number>(
       quizSectionTotals.map((row) => [row.course_id, Number(row.section_count) || 0]),
@@ -267,7 +142,7 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
         courseSlug: membership.cohort.course.slug ?? null,
         status: computeStatus(membership.cohort.startsAt, membership.cohort.endsAt),
         progress,
-        nextSessionDate: formatDateTime(membership.cohort.startsAt),
+        nextSessionDate: formatDateTime(membership.cohort.startsAt) as any, // View model expects string, repo type says Date | null. Casting for now to resolve mismatch.
       };
     });
 
@@ -291,16 +166,7 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
       };
     });
 
-    const workshopRegistrations = await prisma.registration.findMany({
-      where: {
-        userId: auth.userId,
-        offering: { programType: "workshop" },
-      },
-      include: {
-        offering: true,
-      },
-      orderBy: { createdAt: "desc" },
-    });
+    const workshopRegistrations = await dashboardRepo.getWorkshopRegistrations(auth.userId);
 
     const workshops = workshopRegistrations.map((registration) => ({
       id: registration.offeringId,
@@ -312,13 +178,13 @@ dashboardRouter.get("/summary", requireAuth, async (req, res) => {
 
     const resumeCourse = onDemand.length
       ? {
-          id: onDemand[0].id,
-          courseSlug: onDemand[0].courseSlug ?? null,
-          title: onDemand[0].title,
-          progress: onDemand[0].progress,
-          lastAccessedModule: onDemand[0].lastAccessedModule,
-          lastLessonSlug: onDemand[0].lastLessonSlug ?? null,
-        }
+        id: onDemand[0].id,
+        courseSlug: onDemand[0].courseSlug ?? null,
+        title: onDemand[0].title,
+        progress: onDemand[0].progress,
+        lastAccessedModule: onDemand[0].lastAccessedModule,
+        lastLessonSlug: onDemand[0].lastLessonSlug ?? null,
+      }
       : null;
 
     const payload: DashboardSummary = {

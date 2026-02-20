@@ -1,23 +1,23 @@
 ﻿
 import React, { useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'wouter';
-import { 
-  Play, 
-  ArrowRight, 
-  Users, 
-  GraduationCap, 
-  CalendarClock, 
-  Ticket, 
+import {
+  Play,
+  ArrowRight,
+  Users,
+  GraduationCap,
+  CalendarClock,
+  Ticket,
   PlayCircle,
   Clock,
   Layers,
-  LogOut, 
-  Search, 
+  LogOut,
+  Search,
   Bell,
   Zap,
 } from 'lucide-react';
 import { readStoredSession, ensureSessionFresh, logoutAndRedirect } from '@/utils/session';
-import { fetchDashboardSummary, type DashboardSummary } from '@/lib/dashboardApi';
+import { fetchDashboardSummary, type DashboardSummary } from '@/lib/binding/actions/dashboardActions';
 
 // --- TYPES ---
 export enum EnrollmentType {
@@ -349,227 +349,225 @@ const DashboardContent: React.FC<{
   onNavigateOnDemandCatalog,
   onNavigateRegistration,
 }) => {
-  const hasCohorts = data.cohorts.length > 0;
-  const hasOnDemand = data.onDemand.length > 0;
-  const hasWorkshops = data.workshops.length > 0;
+    const hasCohorts = data.cohorts.length > 0;
+    const hasOnDemand = data.onDemand.length > 0;
+    const hasWorkshops = data.workshops.length > 0;
 
-  return (
-    <div className="space-y-16 mt-10">
-      {/* Section 1: Cohort Programs */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-retro-sage/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-retro-teal/10 rounded-xl text-retro-teal"><Users size={20} /></div>
-            <h3 className="text-xl font-black text-retro-teal tracking-tight uppercase tracking-widest">My Active Cohorts</h3>
-          </div>
-          <button
-            className="text-xs font-bold text-retro-teal/70 hover:text-retro-salmon transition-colors uppercase tracking-widest"
-            type="button"
-            onClick={() => {
-              if (data.cohorts[0]?.courseSlug) {
-                onNavigateCourseDetails(data.cohorts[0]?.courseSlug);
-              } else {
-                onNavigateCohortCatalog();
-              }
-            }}
-          >
-            {hasCohorts ? "View History" : "Explore Cohorts"}
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {hasCohorts ? (
-            data.cohorts.map(cohort => (
-              <div key={cohort.id} className="bg-white rounded-3xl p-7 border border-retro-sage/5 hover:border-retro-salmon/20 transition-all shadow-sm hover:shadow-xl group">
-                <div className="flex justify-between items-center mb-6">
-                  <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] ${
-                    cohort.status === CohortStatus.ONGOING ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {cohort.status}
-                  </span>
-                  <div className="text-[9px] font-black text-retro-teal/60 uppercase tracking-wider flex items-center gap-1.5">
-                    <Clock size={12} /> {cohort.nextSessionDate?.split(' - ')[0] ?? "TBD"}
-                  </div>
-                </div>
-                
-                <h4 className="text-lg font-bold text-retro-teal mb-10 line-clamp-2 group-hover:text-retro-salmon transition-colors leading-snug min-h-[3.5rem]">
-                  {cohort.title}
-                </h4>
-
-                <div className="space-y-4 pt-4 border-t border-retro-sage/5">
-                  <div className="flex justify-between items-end">
-                    <p className="text-2xl font-black text-retro-teal tracking-tighter">{cohort.progress}<span className="text-xs text-retro-teal/40 ml-0.5">%</span></p>
-                    <button
-                      className="bg-retro-teal text-white p-2.5 rounded-xl hover:bg-retro-salmon transition-all shadow-md group-hover:scale-110 active:scale-95"
-                      type="button"
-                      onClick={() =>
-                        cohort.courseSlug ? onNavigateCourseDetails(cohort.courseSlug) : onNavigateCohortCatalog()
-                      }
-                    >
-                      <ArrowRight size={18} />
-                    </button>
-                  </div>
-                  <div className="h-2.5 bg-retro-bg rounded-full overflow-hidden">
-                    <div className="h-full bg-retro-teal transition-all duration-700 ease-out" style={{ width: `${cohort.progress}%` }} />
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-white rounded-3xl p-7 border border-dashed border-retro-sage/30 text-retro-teal/70">
-              <div className="text-sm font-bold mb-2">No active cohorts yet.</div>
-              <button
-                type="button"
-                onClick={onNavigateCohortCatalog}
-                className="text-xs font-black uppercase tracking-[0.2em] text-retro-salmon"
-              >
-                Explore cohort programs
-              </button>
+    return (
+      <div className="space-y-16 mt-10">
+        {/* Section 1: Cohort Programs */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b border-retro-sage/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-retro-teal/10 rounded-xl text-retro-teal"><Users size={20} /></div>
+              <h3 className="text-xl font-black text-retro-teal tracking-tight uppercase tracking-widest">My Active Cohorts</h3>
             </div>
-          )}
-        </div>
-      </section>
-
-      {/* Section 2: On Demand Courses */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-retro-sage/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-retro-teal/10 rounded-xl text-retro-teal"><GraduationCap size={20} /></div>
-            <h3 className="text-xl font-black text-retro-teal tracking-tight uppercase tracking-widest">On Demand Courses</h3>
+            <button
+              className="text-xs font-bold text-retro-teal/70 hover:text-retro-salmon transition-colors uppercase tracking-widest"
+              type="button"
+              onClick={() => {
+                if (data.cohorts[0]?.courseSlug) {
+                  onNavigateCourseDetails(data.cohorts[0]?.courseSlug);
+                } else {
+                  onNavigateCohortCatalog();
+                }
+              }}
+            >
+              {hasCohorts ? "View History" : "Explore Cohorts"}
+            </button>
           </div>
-          <button
-            className="text-xs font-bold text-retro-teal/70 hover:text-retro-salmon transition-colors uppercase tracking-widest"
-            type="button"
-            onClick={() => {
-              if (data.onDemand[0]?.courseSlug) {
-                onNavigateCourseDetails(data.onDemand[0]?.courseSlug);
-              } else {
-                onNavigateOnDemandCatalog();
-              }
-            }}
-          >
-            {hasOnDemand ? "Browse Library" : "Explore On-Demand"}
-          </button>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {hasOnDemand ? (
-            data.onDemand.map(course => (
-              <div key={course.id} className="bg-white rounded-3xl p-7 border border-retro-sage/5 hover:border-retro-salmon/10 transition-all shadow-sm hover:shadow-lg group flex flex-col justify-between">
-                <div className="mb-8">
-                  <h4 className="text-base font-bold text-retro-teal mb-3 line-clamp-2 leading-snug group-hover:text-retro-salmon transition-colors min-h-[3rem]">
-                    {course.title}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {hasCohorts ? (
+              data.cohorts.map(cohort => (
+                <div key={cohort.id} className="bg-white rounded-3xl p-7 border border-retro-sage/5 hover:border-retro-salmon/20 transition-all shadow-sm hover:shadow-xl group">
+                  <div className="flex justify-between items-center mb-6">
+                    <span className={`px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-[0.15em] ${cohort.status === CohortStatus.ONGOING ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
+                      }`}>
+                      {cohort.status}
+                    </span>
+                    <div className="text-[9px] font-black text-retro-teal/60 uppercase tracking-wider flex items-center gap-1.5">
+                      <Clock size={12} /> {cohort.nextSessionDate?.split(' - ')[0] ?? "TBD"}
+                    </div>
+                  </div>
+
+                  <h4 className="text-lg font-bold text-retro-teal mb-10 line-clamp-2 group-hover:text-retro-salmon transition-colors leading-snug min-h-[3.5rem]">
+                    {cohort.title}
                   </h4>
-                  <div className="bg-retro-bg/40 p-2.5 rounded-xl border border-retro-sage/5">
-                    <p className="text-[9px] text-retro-teal/50 font-black uppercase tracking-widest mb-1">Last Viewed</p>
-                    <p className="text-[10px] font-bold text-retro-teal/80 line-clamp-1 italic">
-                      {course.lastAccessedModule ? `"${course.lastAccessedModule}"` : "Not started yet"}
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div className="h-1.5 bg-retro-bg rounded-full overflow-hidden">
-                    <div className="h-full bg-retro-sage/60 group-hover:bg-retro-salmon transition-all duration-500" style={{ width: `${course.progress}%` }} />
-                  </div>
-                  <div className="flex justify-between items-center">
-                     <span className="text-[9px] font-black text-retro-teal/40 uppercase tracking-widest">{course.progress}% Complete</span>
-                     <button
-                       className="text-retro-salmon text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 hover:translate-x-1 transition-transform"
-                       type="button"
-                     onClick={() => onNavigateCourse(course.courseSlug ?? course.id, course.lastLessonSlug)}
-                   >
-                       <PlayCircle size={14} /> Resume
-                     </button>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="bg-white rounded-3xl p-7 border border-dashed border-retro-sage/30 text-retro-teal/70">
-              <div className="text-sm font-bold mb-2">No on-demand courses yet.</div>
-              <button
-                type="button"
-                onClick={onNavigateOnDemandCatalog}
-                className="text-xs font-black uppercase tracking-[0.2em] text-retro-salmon"
-              >
-                Explore on-demand catalog
-              </button>
-            </div>
-          )}
-        </div>
-      </section>
 
-      {/* Section 3: Workshops */}
-      <section className="space-y-6">
-        <div className="flex items-center justify-between border-b border-retro-sage/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-retro-salmon/10 rounded-xl text-retro-salmon"><CalendarClock size={20} /></div>
-            <h3 className="text-xl font-black text-retro-teal tracking-tight uppercase tracking-widest">Upcoming Workshops</h3>
-          </div>
-          <p className="text-[10px] font-black text-retro-teal/40 uppercase tracking-[0.2em] hidden sm:block">Live Interactive Sessions</p>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {hasWorkshops ? (
-            data.workshops.map(workshop => (
-              <div key={workshop.id} className="bg-white p-7 rounded-3xl border border-retro-sage/5 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
-                {workshop.isJoined && (
-                  <div className="absolute top-0 right-0 px-3 py-1 bg-retro-teal text-[8px] font-black text-white uppercase tracking-widest rounded-bl-xl">Registered</div>
-                )}
-                <div className="mb-6">
-                  <p className="text-lg font-bold text-retro-teal mb-2 line-clamp-1">{workshop.title}</p>
-                  <div className="flex items-center gap-4">
-                    <p className="text-[10px] font-black text-retro-teal/60 uppercase tracking-widest flex items-center gap-2 bg-retro-bg/50 px-2 py-1 rounded-lg">
-                      <CalendarClock size={12} className="text-retro-salmon" /> {workshop.date}
-                    </p>
-                    <p className="text-[10px] font-black text-retro-teal/60 uppercase tracking-widest flex items-center gap-2 bg-retro-bg/50 px-2 py-1 rounded-lg">
-                      <Clock size={12} className="text-retro-salmon" /> {workshop.time}
-                    </p>
+                  <div className="space-y-4 pt-4 border-t border-retro-sage/5">
+                    <div className="flex justify-between items-end">
+                      <p className="text-2xl font-black text-retro-teal tracking-tighter">{cohort.progress}<span className="text-xs text-retro-teal/40 ml-0.5">%</span></p>
+                      <button
+                        className="bg-retro-teal text-white p-2.5 rounded-xl hover:bg-retro-salmon transition-all shadow-md group-hover:scale-110 active:scale-95"
+                        type="button"
+                        onClick={() =>
+                          cohort.courseSlug ? onNavigateCourseDetails(cohort.courseSlug) : onNavigateCohortCatalog()
+                        }
+                      >
+                        <ArrowRight size={18} />
+                      </button>
+                    </div>
+                    <div className="h-2.5 bg-retro-bg rounded-full overflow-hidden">
+                      <div className="h-full bg-retro-teal transition-all duration-700 ease-out" style={{ width: `${cohort.progress}%` }} />
+                    </div>
                   </div>
                 </div>
+              ))
+            ) : (
+              <div className="bg-white rounded-3xl p-7 border border-dashed border-retro-sage/30 text-retro-teal/70">
+                <div className="text-sm font-bold mb-2">No active cohorts yet.</div>
                 <button
-                  className={`w-full py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all shadow-sm ${
-                    workshop.isJoined
-                      ? 'bg-retro-teal text-white hover:bg-retro-teal/90'
-                      : 'bg-white border-2 border-retro-sage/10 text-retro-teal hover:bg-retro-teal hover:text-white'
-                  }`}
                   type="button"
-                  onClick={() => {
-                    if (!workshop.isJoined) {
-                      onNavigateRegistration();
-                    }
-                  }}
+                  onClick={onNavigateCohortCatalog}
+                  className="text-xs font-black uppercase tracking-[0.2em] text-retro-salmon"
                 >
-                  <Ticket size={16} /> {workshop.isJoined ? 'Joined Session' : 'Register Now'}
+                  Explore cohort programs
                 </button>
               </div>
-            ))
-          ) : (
-            <div className="bg-white rounded-3xl p-7 border border-dashed border-retro-sage/30 text-retro-teal/70">
-              <div className="text-sm font-bold mb-2">No workshops scheduled yet.</div>
-              <button
-                type="button"
-                onClick={onNavigateRegistration}
-                className="text-xs font-black uppercase tracking-[0.2em] text-retro-salmon"
-              >
-                View available workshops
-              </button>
-            </div>
-          )}
-        </div>
-        
-        <div className="flex justify-center pt-4">
-          <div className="flex items-center gap-3 bg-white/40 px-6 py-2 rounded-full border border-retro-sage/5">
-            <span className="w-2 h-2 bg-retro-salmon rounded-full animate-pulse shadow-[0_0_8px_rgba(230,72,51,0.5)]"></span>
-            <p className="text-[10px] font-bold text-retro-teal/60 italic tracking-wide">
-              Join instructions and calendar invites are sent automatically upon registration.
-            </p>
+            )}
           </div>
-        </div>
-      </section>
-    </div>
-  );
-};
+        </section>
+
+        {/* Section 2: On Demand Courses */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b border-retro-sage/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-retro-teal/10 rounded-xl text-retro-teal"><GraduationCap size={20} /></div>
+              <h3 className="text-xl font-black text-retro-teal tracking-tight uppercase tracking-widest">On Demand Courses</h3>
+            </div>
+            <button
+              className="text-xs font-bold text-retro-teal/70 hover:text-retro-salmon transition-colors uppercase tracking-widest"
+              type="button"
+              onClick={() => {
+                if (data.onDemand[0]?.courseSlug) {
+                  onNavigateCourseDetails(data.onDemand[0]?.courseSlug);
+                } else {
+                  onNavigateOnDemandCatalog();
+                }
+              }}
+            >
+              {hasOnDemand ? "Browse Library" : "Explore On-Demand"}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {hasOnDemand ? (
+              data.onDemand.map(course => (
+                <div key={course.id} className="bg-white rounded-3xl p-7 border border-retro-sage/5 hover:border-retro-salmon/10 transition-all shadow-sm hover:shadow-lg group flex flex-col justify-between">
+                  <div className="mb-8">
+                    <h4 className="text-base font-bold text-retro-teal mb-3 line-clamp-2 leading-snug group-hover:text-retro-salmon transition-colors min-h-[3rem]">
+                      {course.title}
+                    </h4>
+                    <div className="bg-retro-bg/40 p-2.5 rounded-xl border border-retro-sage/5">
+                      <p className="text-[9px] text-retro-teal/50 font-black uppercase tracking-widest mb-1">Last Viewed</p>
+                      <p className="text-[10px] font-bold text-retro-teal/80 line-clamp-1 italic">
+                        {course.lastAccessedModule ? `"${course.lastAccessedModule}"` : "Not started yet"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div className="h-1.5 bg-retro-bg rounded-full overflow-hidden">
+                      <div className="h-full bg-retro-sage/60 group-hover:bg-retro-salmon transition-all duration-500" style={{ width: `${course.progress}%` }} />
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-[9px] font-black text-retro-teal/40 uppercase tracking-widest">{course.progress}% Complete</span>
+                      <button
+                        className="text-retro-salmon text-[10px] font-black uppercase tracking-[0.2em] flex items-center gap-2 hover:translate-x-1 transition-transform"
+                        type="button"
+                        onClick={() => onNavigateCourse(course.courseSlug ?? course.id, course.lastLessonSlug)}
+                      >
+                        <PlayCircle size={14} /> Resume
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="bg-white rounded-3xl p-7 border border-dashed border-retro-sage/30 text-retro-teal/70">
+                <div className="text-sm font-bold mb-2">No on-demand courses yet.</div>
+                <button
+                  type="button"
+                  onClick={onNavigateOnDemandCatalog}
+                  className="text-xs font-black uppercase tracking-[0.2em] text-retro-salmon"
+                >
+                  Explore on-demand catalog
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* Section 3: Workshops */}
+        <section className="space-y-6">
+          <div className="flex items-center justify-between border-b border-retro-sage/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-retro-salmon/10 rounded-xl text-retro-salmon"><CalendarClock size={20} /></div>
+              <h3 className="text-xl font-black text-retro-teal tracking-tight uppercase tracking-widest">Upcoming Workshops</h3>
+            </div>
+            <p className="text-[10px] font-black text-retro-teal/40 uppercase tracking-[0.2em] hidden sm:block">Live Interactive Sessions</p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {hasWorkshops ? (
+              data.workshops.map(workshop => (
+                <div key={workshop.id} className="bg-white p-7 rounded-3xl border border-retro-sage/5 shadow-sm hover:shadow-xl transition-all group relative overflow-hidden">
+                  {workshop.isJoined && (
+                    <div className="absolute top-0 right-0 px-3 py-1 bg-retro-teal text-[8px] font-black text-white uppercase tracking-widest rounded-bl-xl">Registered</div>
+                  )}
+                  <div className="mb-6">
+                    <p className="text-lg font-bold text-retro-teal mb-2 line-clamp-1">{workshop.title}</p>
+                    <div className="flex items-center gap-4">
+                      <p className="text-[10px] font-black text-retro-teal/60 uppercase tracking-widest flex items-center gap-2 bg-retro-bg/50 px-2 py-1 rounded-lg">
+                        <CalendarClock size={12} className="text-retro-salmon" /> {workshop.date}
+                      </p>
+                      <p className="text-[10px] font-black text-retro-teal/60 uppercase tracking-widest flex items-center gap-2 bg-retro-bg/50 px-2 py-1 rounded-lg">
+                        <Clock size={12} className="text-retro-salmon" /> {workshop.time}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    className={`w-full py-3.5 rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] flex items-center justify-center gap-2 transition-all shadow-sm ${workshop.isJoined
+                      ? 'bg-retro-teal text-white hover:bg-retro-teal/90'
+                      : 'bg-white border-2 border-retro-sage/10 text-retro-teal hover:bg-retro-teal hover:text-white'
+                      }`}
+                    type="button"
+                    onClick={() => {
+                      if (!workshop.isJoined) {
+                        onNavigateRegistration();
+                      }
+                    }}
+                  >
+                    <Ticket size={16} /> {workshop.isJoined ? 'Joined Session' : 'Register Now'}
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="bg-white rounded-3xl p-7 border border-dashed border-retro-sage/30 text-retro-teal/70">
+                <div className="text-sm font-bold mb-2">No workshops scheduled yet.</div>
+                <button
+                  type="button"
+                  onClick={onNavigateRegistration}
+                  className="text-xs font-black uppercase tracking-[0.2em] text-retro-salmon"
+                >
+                  View available workshops
+                </button>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-center pt-4">
+            <div className="flex items-center gap-3 bg-white/40 px-6 py-2 rounded-full border border-retro-sage/5">
+              <span className="w-2 h-2 bg-retro-salmon rounded-full animate-pulse shadow-[0_0_8px_rgba(230,72,51,0.5)]"></span>
+              <p className="text-[10px] font-bold text-retro-teal/60 italic tracking-wide">
+                Join instructions and calendar invites are sent automatically upon registration.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    );
+  };
 
 // --- MAIN APP ---
 const App: React.FC = () => {
@@ -816,7 +814,7 @@ const App: React.FC = () => {
       />
       <div className="flex flex-col pt-16">
         <main className="flex-grow p-4 md:p-6 xl:p-10 w-full max-w-[1400px] mx-auto">
-          
+
           <div className="mb-10">
             <h1 className="text-3xl lg:text-4xl font-black text-retro-teal mb-1 tracking-tight">
               Welcome back, {displayName}!

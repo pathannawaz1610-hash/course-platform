@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import type { CartItem, CartResponse } from '@/types/cart';
 import type { StoredSession } from '@/types/session';
-import { buildApiUrl } from '@/lib/api';
+import { fetchCart as fetchCartAction, removeFromCart as removeFromCartAction, clearCart as clearCartAction } from '@/lib/binding/actions/cartActions';
 import { ShoppingCart, Trash2, Star, Clock, Users, CreditCard, Home, PartyPopper, CheckCircle2 } from 'lucide-react';
 import ThemeToggle from '@/components/ThemeToggle'; // Import ThemeToggle
 import { SiteLayout } from '@/components/layout/SiteLayout';
@@ -73,18 +73,18 @@ export default function CartPage() {
 
     setIsLoadingCart(true);
     try {
-      const response = await fetch(buildApiUrl("/cart"), {
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-      });
-      await updateCartFromResponse(response);
+      // ✅ UPDATED: Use cartActions instead of direct fetch
+      const items = await fetchCartAction(session);
+      setCart(items);
     } catch (error) {
       console.error("Failed to load cart", error);
+      if ((error as any).status === 401) {
+        handleUnauthorized();
+      }
     } finally {
       setIsLoadingCart(false);
     }
-  }, [isAuthenticated, session?.accessToken, updateCartFromResponse]);
+  }, [handleUnauthorized, isAuthenticated, session]);
 
   useEffect(() => {
     const syncAuthState = () => {
@@ -151,16 +151,11 @@ export default function CartPage() {
       }
 
       try {
-        const response = await fetch(buildApiUrl(`/api/cart/items/${encodeURIComponent(courseId)}`), {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-        });
+        // ✅ UPDATED: Use cartActions instead of direct fetch
+        const items = await removeFromCartAction(courseId, session);
+        setCart(items);
 
-        const updated = await updateCartFromResponse(response);
-
-        if (!options?.silent && updated) {
+        if (!options?.silent) {
           toast({
             title: "Removed from Cart",
             description: "Course has been removed from your cart.",
@@ -168,6 +163,9 @@ export default function CartPage() {
         }
       } catch (error) {
         console.error("Failed to remove course from cart", error);
+        if ((error as any).status === 401) {
+          handleUnauthorized();
+        }
         if (!options?.silent) {
           toast({
             variant: "destructive",
@@ -177,7 +175,7 @@ export default function CartPage() {
         }
       }
     },
-    [isAuthenticated, session?.accessToken, toast, updateCartFromResponse],
+    [handleUnauthorized, isAuthenticated, session, toast],
   );
 
   const clearCart = useCallback(
@@ -194,23 +192,8 @@ export default function CartPage() {
       }
 
       try {
-        const response = await fetch(buildApiUrl("/cart"), {
-          method: 'DELETE',
-          headers: {
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-        });
-
-        if (response.status === 401) {
-          handleUnauthorized();
-          throw new Error("unauthorized");
-        }
-
-        if (!response.ok && response.status !== 204) {
-          const message = await response.text();
-          throw new Error(message || `Failed to clear cart: ${response.status}`);
-        }
-
+        // ✅ UPDATED: Use cartActions instead of direct fetch
+        await clearCartAction(session);
         setCart([]);
         if (!silent) {
           toast({
@@ -220,6 +203,9 @@ export default function CartPage() {
         }
       } catch (error) {
         console.error("Failed to clear cart", error);
+        if ((error as any).status === 401) {
+          handleUnauthorized();
+        }
         if (!silent) {
           toast({
             variant: "destructive",
@@ -232,7 +218,7 @@ export default function CartPage() {
         }
       }
     },
-    [handleUnauthorized, isAuthenticated, session?.accessToken, toast],
+    [handleUnauthorized, isAuthenticated, session, toast],
   );
 
   const handleCheckout = useCallback(async () => {

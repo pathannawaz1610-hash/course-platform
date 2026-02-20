@@ -15,7 +15,8 @@ import {
   Users,
 } from "lucide-react";
 import { useLocation, useParams } from "wouter";
-import { buildApiUrl } from "@/lib/api";
+import { fetchCourse, fetchCourseTopics, enrollInCourse, checkEnrollment } from '@/lib/binding/actions/courseActions';
+import { buildApiUrl } from "@/lib/api"; // Still needed for navigation
 import { useToast } from "@/hooks/use-toast";
 import { ensureSessionFresh, readStoredSession } from "@/utils/session";
 
@@ -200,47 +201,46 @@ const CourseDetailsPage: React.FC = () => {
     let mounted = true;
     const loadCourse = async () => {
       try {
-        const courseRes = await fetch(buildApiUrl(`/api/courses/${courseId}`));
-        if (courseRes.ok) {
-          const payload = await courseRes.json();
-          if (mounted) {
-            const course = payload?.course;
-            const slug = course?.slug ?? courseId;
-            setCourseTitle(course?.title ?? course?.courseName ?? "AI Engineer Bootcamp");
-            const normalizedPrice =
-              typeof course?.priceCents === "number" && Number.isFinite(course.priceCents)
-                ? course.priceCents
-                : null;
-            const promo = slug && typeof slug === "string" ? PROMO_PRICING[slug] : undefined;
-            const displayPriceCents = promo?.priceCents ?? normalizedPrice;
-            const compareAtFromPromo =
-              promo?.compareAtCents ?? (normalizedPrice ? Math.round(normalizedPrice * 1.8) : null);
-            setCourseMeta({
-              subtitle: course?.description ?? DEFAULT_SUBTITLE,
-              displayPriceCents,
-              compareAtCents: compareAtFromPromo,
-              originalPriceCents: normalizedPrice,
-              rating:
-                typeof course?.rating === "number" && Number.isFinite(course.rating) ? course.rating : null,
-              students:
-                typeof course?.students === "number" && Number.isFinite(course.students)
-                  ? course.students
-                  : null,
-              badge: promo?.badge ?? (course?.level ? `${course.level} level` : DEFAULT_BADGE),
-              category: course?.category ?? "Hands-on projects",
-              promoActive: Boolean(promo),
-            });
-          }
+        // ✅ UPDATED: Use courseActions instead of direct fetch
+        const payload = await fetchCourse(courseId);
+        if (mounted) {
+          const course = payload?.course || payload;
+          const slug = course?.slug ?? courseId;
+          setCourseTitle(course?.title ?? course?.courseName ?? "AI Engineer Bootcamp");
+          const normalizedPrice =
+            typeof course?.priceCents === "number" && Number.isFinite(course.priceCents)
+              ? course.priceCents
+              : null;
+          const promo = slug && typeof slug === "string" ? PROMO_PRICING[slug] : undefined;
+          const displayPriceCents = promo?.priceCents ?? normalizedPrice;
+          const compareAtFromPromo =
+            promo?.compareAtCents ?? (normalizedPrice ? Math.round(normalizedPrice * 1.8) : null);
+          setCourseMeta({
+            subtitle: course?.description ?? DEFAULT_SUBTITLE,
+            displayPriceCents,
+            compareAtCents: compareAtFromPromo,
+            originalPriceCents: normalizedPrice,
+            rating:
+              typeof course?.rating === "number" && Number.isFinite(course.rating) ? course.rating : null,
+            students:
+              typeof course?.students === "number" && Number.isFinite(course.students)
+                ? course.students
+                : null,
+            badge: promo?.badge ?? (course?.level ? `${course.level} level` : DEFAULT_BADGE),
+            category: course?.category ?? "Hands-on projects",
+            promoActive: Boolean(promo),
+          });
         }
+      } catch (err) {
+        // Ignore course metadata errors, continue with topics
+      }
 
-        const res = await fetch(buildApiUrl(`/api/lessons/courses/${courseId}/topics`));
-        if (!res.ok) {
-          throw new Error("Failed to load course topics");
-        }
-        const data = (await res.json()) as { topics: TopicApi[] };
+      try {
+        // ✅ UPDATED: Use courseActions instead of direct fetch
+        const data = await fetchCourseTopics(courseId, null);
 
         const grouped = new Map<number, TopicApi[]>();
-        data.topics.forEach((t) => {
+        data.forEach((t) => {
           const list = grouped.get(t.moduleNo) ?? [];
           list.push(t);
           grouped.set(t.moduleNo, list);
@@ -332,27 +332,15 @@ const CourseDetailsPage: React.FC = () => {
     }
 
     try {
-      const response = await fetch(buildApiUrl(`/api/courses/${courseId}/enroll?checkOnly=true`), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-      });
-
-      if (response.status === 403) {
-        const payload = await response.json().catch(() => null);
-        showCohortBlockedToast(payload?.message);
+      // ✅ UPDATED: Use courseActions instead of direct fetch
+      const result = await checkEnrollment(courseId, session);
+      return { allowed: true };
+    } catch (error: any) {
+      if (error.status === 403) {
+        const message = error.message || "You are not in this cohort batch. Please register first.";
+        showCohortBlockedToast(message);
         return { allowed: false };
       }
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message ?? "Unable to verify cohort access.");
-      }
-
-      return { allowed: true };
-    } catch (error) {
       toast({
         variant: "destructive",
         title: "Enrollment check failed",
@@ -375,27 +363,15 @@ const CourseDetailsPage: React.FC = () => {
         return { success: false };
       }
 
-      const response = await fetch(buildApiUrl(`/api/courses/${courseId}/enroll`), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.accessToken}`,
-        },
-      });
-
-      if (response.status === 403) {
-        const payload = await response.json().catch(() => null);
-        showCohortBlockedToast(payload?.message);
+      // ✅ UPDATED: Use courseActions instead of direct fetch
+      const result = await enrollInCourse(courseId, session);
+      return { success: true, token: session.accessToken };
+    } catch (error: any) {
+      if (error.status === 403) {
+        const message = error.message || "You are not in this cohort batch. Please register first.";
+        showCohortBlockedToast(message);
         return { success: false };
       }
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message ?? "Unable to enroll in this course.");
-      }
-
-      return { success: true, token: session.accessToken };
-    } catch (error) {
       toast({
         variant: "destructive",
         title: "Enrollment failed",

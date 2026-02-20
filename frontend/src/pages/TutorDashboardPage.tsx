@@ -5,7 +5,20 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import {
+  fetchTutorCourses,
+  fetchTutorEnrollments,
+  fetchTutorProgress,
+  fetchActivityLearners,
+  fetchLearnerHistory,
+  queryAssistant,
+  type TutorCourse,
+  type EnrollmentRow,
+  type ProgressRow,
+  type ActivityLearner,
+  type ActivitySummary
+} from '@/lib/binding/actions/tutorActions';
+import { fetchCourseTopics, type Topic as CourseTopic } from '@/lib/binding/actions/courseActions';
 import { readStoredSession, clearStoredSession, resetSessionHeartbeat } from '@/utils/session';
 import { SiteLayout } from '@/components/layout/SiteLayout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,65 +26,13 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 
-type TutorCourse = {
-  courseId: string;
-  slug: string;
-  title: string;
-  description?: string;
-  role?: string;
-};
 
-type EnrollmentRow = {
-  enrollmentId: string;
-  enrolledAt: string;
-  status: string;
-  userId: string;
-  fullName: string;
-  email: string;
-};
-
-type ProgressRow = {
-  userId: string;
-  fullName: string;
-  email: string;
-  enrolledAt: string;
-  completedModules: number;
-  totalModules: number;
-  percent: number;
-};
 
 type TutorAssistantMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
-};
-
-type ActivityLearner = {
-  eventId?: string;
-  userId: string;
-  courseId: string;
-  moduleNo: number | null;
-  topicId: string | null;
-  topicTitle?: string | null;
-  eventType: string;
-  derivedStatus: string | null;
-  statusReason: string | null;
-  createdAt: string;
-};
-
-type ActivitySummary = {
-  engaged: number;
-  attention_drift: number;
-  content_friction: number;
-  unknown: number;
-};
-
-type CourseTopic = {
-  topicId: string;
-  topicName: string;
-  moduleNo: number;
-  moduleName?: string;
 };
 
 export default function TutorDashboardPage() {
@@ -105,8 +66,8 @@ export default function TutorDashboardPage() {
     queryKey: ['tutor-courses'],
     enabled: session?.role === 'tutor' || session?.role === 'admin',
     queryFn: async () => {
-      const response = await apiRequest('GET', '/api/tutors/me/courses', undefined, headers ? { headers } : undefined);
-      return response.json();
+      const response = await fetchTutorCourses();
+      return response;
     }
   });
 
@@ -130,13 +91,7 @@ export default function TutorDashboardPage() {
     queryKey: ['tutor-enrollments', selectedCourseId],
     enabled: Boolean(selectedCourseId) && Boolean(headers),
     queryFn: async () => {
-      const response = await apiRequest(
-        'GET',
-        `/api/tutors/${selectedCourseId}/enrollments`,
-        undefined,
-        headers ? { headers } : undefined
-      );
-      return response.json();
+      return fetchTutorEnrollments(selectedCourseId!);
     }
   });
 
@@ -144,13 +99,7 @@ export default function TutorDashboardPage() {
     queryKey: ['tutor-progress', selectedCourseId],
     enabled: Boolean(selectedCourseId) && Boolean(headers),
     queryFn: async () => {
-      const response = await apiRequest(
-        'GET',
-        `/api/tutors/${selectedCourseId}/progress`,
-        undefined,
-        headers ? { headers } : undefined
-      );
-      return response.json();
+      return fetchTutorProgress(selectedCourseId!);
     }
   });
 
@@ -161,13 +110,8 @@ export default function TutorDashboardPage() {
     queryKey: ['tutor-topics', selectedCourseId],
     enabled: Boolean(selectedCourseId),
     queryFn: async () => {
-      const response = await apiRequest(
-        'GET',
-        `/api/lessons/courses/${selectedCourseId}/topics`,
-        undefined,
-        headers ? { headers } : undefined
-      );
-      return response.json();
+      const topics = await fetchCourseTopics(selectedCourseId!);
+      return { topics };
     }
   });
 
@@ -181,13 +125,7 @@ export default function TutorDashboardPage() {
     enabled: Boolean(selectedCourseId) && Boolean(headers),
     refetchInterval: 30_000,
     queryFn: async () => {
-      const response = await apiRequest(
-        'GET',
-        `/api/activity/courses/${selectedCourseId}/learners`,
-        undefined,
-        headers ? { headers } : undefined
-      );
-      return response.json();
+      return fetchActivityLearners(selectedCourseId!);
     }
   });
 
@@ -199,13 +137,7 @@ export default function TutorDashboardPage() {
     queryKey: ['activity-history', selectedLearnerId, selectedCourseId],
     enabled: Boolean(selectedLearnerId) && Boolean(selectedCourseId) && Boolean(headers),
     queryFn: async () => {
-      const response = await apiRequest(
-        'GET',
-        `/api/activity/learners/${selectedLearnerId}/history?courseId=${selectedCourseId}&limit=40`,
-        undefined,
-        headers ? { headers } : undefined
-      );
-      return response.json();
+      return fetchLearnerHistory(selectedLearnerId!, selectedCourseId!);
     }
   });
 
@@ -289,65 +221,65 @@ export default function TutorDashboardPage() {
   }, [historyEvents]);
   const statusOrder: Array<keyof typeof statusMeta> = ['engaged', 'attention_drift', 'content_friction', 'unknown'];
 
-const formatTimestamp = (timestamp: string) =>
-  new Date(timestamp).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', year: 'numeric', month: 'short', day: 'numeric' });
+  const formatTimestamp = (timestamp: string) =>
+    new Date(timestamp).toLocaleString(undefined, { hour: '2-digit', minute: '2-digit', year: 'numeric', month: 'short', day: 'numeric' });
 
-const EVENT_LABELS: Record<string, string> = {
-  'idle.start': 'Idle detected',
-  'idle.end': 'Attention resumed',
-  'video.play': 'Video started',
-  'video.pause': 'Video paused',
-  'video.buffer.start': 'Video buffering',
-  'video.buffer.end': 'Video resumed',
-  'lesson.view': 'Lesson viewed',
-  'lesson.locked_click': 'Locked lesson clicked',
-  'quiz.fail': 'Quiz attempt failed',
-  'quiz.pass': 'Quiz passed',
-  'quiz.retry': 'Quiz retried',
-  'quiz.progress': 'Quiz progress updated',
-  'progress.snapshot': 'Progress snapshot',
-  'persona.change': 'Persona updated',
-  'notes.saved': 'Notes saved',
-  'cold_call.loaded': 'Cold-call prompt opened',
-  'cold_call.submit': 'Cold-call response submitted',
-  'cold_call.star': 'Cold-call star awarded',
-  'cold_call.response_received': 'Tutor responded to cold-call',
-  'tutor.prompt': 'Tutor prompt sent',
-  'tutor.response_received': 'Tutor response received',
-};
+  const EVENT_LABELS: Record<string, string> = {
+    'idle.start': 'Idle detected',
+    'idle.end': 'Attention resumed',
+    'video.play': 'Video started',
+    'video.pause': 'Video paused',
+    'video.buffer.start': 'Video buffering',
+    'video.buffer.end': 'Video resumed',
+    'lesson.view': 'Lesson viewed',
+    'lesson.locked_click': 'Locked lesson clicked',
+    'quiz.fail': 'Quiz attempt failed',
+    'quiz.pass': 'Quiz passed',
+    'quiz.retry': 'Quiz retried',
+    'quiz.progress': 'Quiz progress updated',
+    'progress.snapshot': 'Progress snapshot',
+    'persona.change': 'Persona updated',
+    'notes.saved': 'Notes saved',
+    'cold_call.loaded': 'Cold-call prompt opened',
+    'cold_call.submit': 'Cold-call response submitted',
+    'cold_call.star': 'Cold-call star awarded',
+    'cold_call.response_received': 'Tutor responded to cold-call',
+    'tutor.prompt': 'Tutor prompt sent',
+    'tutor.response_received': 'Tutor response received',
+  };
 
-const STATUS_REASON_LABELS: Record<string, string> = {
-  no_interaction: 'No interaction detected',
-  tab_hidden: 'Browser tab hidden',
-  tab_visible: 'Browser tab visible',
-  video_play: 'Video playing',
-  video_pause: 'Video paused',
-};
+  const STATUS_REASON_LABELS: Record<string, string> = {
+    no_interaction: 'No interaction detected',
+    tab_hidden: 'Browser tab hidden',
+    tab_visible: 'Browser tab visible',
+    video_play: 'Video playing',
+    video_pause: 'Video paused',
+  };
 
-function friendlyLabel(source: string, dictionary: Record<string, string>): string {
-  const normalized = source.toLowerCase();
-  if (dictionary[normalized]) {
-    return dictionary[normalized];
+  function friendlyLabel(source: string, dictionary: Record<string, string>): string {
+    const normalized = source.toLowerCase();
+    if (dictionary[normalized]) {
+      return dictionary[normalized];
+    }
+    if (/\s/.test(source) || /[()]/.test(source)) {
+      return source;
+    }
+    return source
+      .replace(/[._]/g, ' ')
+      .split(' ')
+      .filter(Boolean)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
   }
-  if (/\s/.test(source) || /[()]/.test(source)) {
-    return source;
+
+  function formatEventLabel(eventType: string): string {
+    return friendlyLabel(eventType, EVENT_LABELS);
   }
-  return source
-    .replace(/[._]/g, ' ')
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ');
-}
 
-function formatEventLabel(eventType: string): string {
-  return friendlyLabel(eventType, EVENT_LABELS);
-}
-
-function formatStatusReason(reason?: string | null): string | null {
-  if (!reason) return null;
-  return friendlyLabel(reason, STATUS_REASON_LABELS);
-}
+  function formatStatusReason(reason?: string | null): string | null {
+    if (!reason) return null;
+    return friendlyLabel(reason, STATUS_REASON_LABELS);
+  }
 
   const handleLogout = () => {
     clearStoredSession();
@@ -379,13 +311,7 @@ function formatStatusReason(reason?: string | null): string | null {
     setAssistantLoading(true);
 
     try {
-      const response = await apiRequest(
-        'POST',
-        '/api/tutors/assistant/query',
-        { courseId: selectedCourseId, question },
-        { headers }
-      );
-      const payload = await response.json();
+      const payload = await queryAssistant(selectedCourseId, question);
       const assistantMessage: TutorAssistantMessage = {
         id: `${Date.now()}-${Math.random()}`,
         role: 'assistant',
@@ -707,9 +633,8 @@ function formatStatusReason(reason?: string | null): string | null {
                             type="button"
                             key={learner.userId}
                             onClick={() => setSelectedLearnerId(learner.userId)}
-                            className={`w-full rounded-2xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 ${
-                              isActive ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white hover:bg-slate-50'
-                            }`}
+                            className={`w-full rounded-2xl border px-4 py-3 text-left transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 ${isActive ? 'border-emerald-200 bg-emerald-50' : 'border-slate-200 bg-white hover:bg-slate-50'
+                              }`}
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div>
@@ -819,11 +744,10 @@ function formatStatusReason(reason?: string | null): string | null {
                     assistantMessages.map((message) => (
                       <div
                         key={message.id}
-                        className={`mb-3 inline-block max-w-full rounded-2xl px-4 py-2 ${
-                          message.role === 'assistant'
-                            ? 'bg-white text-slate-900 shadow-sm'
-                            : 'bg-emerald-50 text-emerald-800'
-                        }`}
+                        className={`mb-3 inline-block max-w-full rounded-2xl px-4 py-2 ${message.role === 'assistant'
+                          ? 'bg-white text-slate-900 shadow-sm'
+                          : 'bg-emerald-50 text-emerald-800'
+                          }`}
                       >
                         <p className="text-[10px] uppercase tracking-wide opacity-70">
                           {message.role === 'assistant' ? 'Copilot' : 'You'}

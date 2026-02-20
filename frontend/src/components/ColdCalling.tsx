@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Star, Send } from "lucide-react";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
-import { buildApiUrl } from "@/lib/api";
+import { fetchColdCallPrompts, postColdCallMessage, postColdCallReply, removeColdCallStar, starColdCallMessage } from '@/lib/binding/actions/coldCallActions';
 import type { StoredSession } from "@/types/session";
 
 type ColdCallPrompt = {
@@ -101,7 +101,7 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
   );
 
   const loadPrompt = useCallback(async () => {
-    if (!topicId || !accessToken) {
+    if (!topicId || !accessToken || !session) {
       setPrompt(null);
       setMessages([]);
       setHasSubmitted(false);
@@ -112,37 +112,26 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
     setLoading(true);
     setAccessMessage(null);
     try {
-      const response = await fetch(buildApiUrl(`/api/cold-call/prompts/${topicId}`), {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-
-      if (response.status === 403) {
-        const payload = await response.json().catch(() => null);
-        setAccessMessage(payload?.message ?? "Cohort access required to participate.");
-        setPrompt(null);
-        setMessages([]);
-        setHasSubmitted(false);
-        return;
-      }
-
-      if (response.status === 404) {
-        setPrompt(null);
-        setMessages([]);
-        setHasSubmitted(false);
-        return;
-      }
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message ?? "Unable to load cold calling prompt.");
-      }
-
-      const payload = (await response.json()) as ColdCallPayload;
+      // ✅ UPDATED: Use coldCallActions instead of direct fetch
+      const payload = await fetchColdCallPrompts(topicId, session);
       setPrompt(payload.prompt);
       setHasSubmitted(payload.hasSubmitted);
       setMessages(payload.messages ?? []);
       emitTelemetry("cold_call.loaded", { promptId: payload.prompt.promptId, hasSubmitted: payload.hasSubmitted });
-    } catch (error) {
+    } catch (error: any) {
+      if (error.status === 403) {
+        setAccessMessage(error.message ?? "Cohort access required to participate.");
+        setPrompt(null);
+        setMessages([]);
+        setHasSubmitted(false);
+        return;
+      }
+      if (error.status === 404) {
+        setPrompt(null);
+        setMessages([]);
+        setHasSubmitted(false);
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Cold calling unavailable",
@@ -197,7 +186,7 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
 
   const submitResponse = async () => {
     const trimmedResponse = responseText.trim();
-    if (!prompt || !accessToken || !trimmedResponse) {
+    if (!prompt || !accessToken || !session || !trimmedResponse) {
       return;
     }
     if (submitting) {
@@ -205,20 +194,8 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
     }
     setSubmitting(true);
     try {
-      const response = await fetch(buildApiUrl("/api/cold-call/messages"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ promptId: prompt.promptId, body: responseText.trim() }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message ?? "Unable to submit your response.");
-      }
-
+      // ✅ UPDATED: Use coldCallActions instead of direct fetch
+      await postColdCallMessage({ promptId: prompt.promptId, body: responseText.trim() }, session);
       setResponseText("");
       await loadPrompt();
       emitTelemetry("cold_call.submit", { promptId: prompt.promptId, length: trimmedResponse.length });
@@ -235,7 +212,7 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
 
   const submitReply = async () => {
     const trimmedReply = replyText.trim();
-    if (!replyTargetId || !trimmedReply || !accessToken) {
+    if (!replyTargetId || !trimmedReply || !accessToken || !session) {
       return;
     }
     if (replySubmitting) {
@@ -243,20 +220,8 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
     }
     setReplySubmitting(true);
     try {
-      const response = await fetch(buildApiUrl("/api/cold-call/replies"), {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`,
-        },
-        body: JSON.stringify({ parentId: replyTargetId, body: replyText.trim() }),
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => null);
-        throw new Error(payload?.message ?? "Unable to post your reply.");
-      }
-
+      // ✅ UPDATED: Use coldCallActions instead of direct fetch
+      await postColdCallReply({ parentId: replyTargetId, body: replyText.trim() }, session);
       setReplyTargetId(null);
       setReplyText("");
       await loadPrompt();
@@ -273,20 +238,14 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
   };
 
   const toggleStar = async (message: ColdCallMessage) => {
-    if (!accessToken || pendingStars.has(message.messageId)) {
+    if (!accessToken || !session || pendingStars.has(message.messageId)) {
       return;
     }
     setPendingStars((prev) => new Set(prev).add(message.messageId));
     try {
       if (message.starredByMe) {
-        const response = await fetch(buildApiUrl(`/api/cold-call/stars/${message.messageId}`), {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${accessToken}` },
-        });
-        if (!response.ok && response.status !== 204) {
-          const payload = await response.json().catch(() => null);
-          throw new Error(payload?.message ?? "Unable to remove star.");
-        }
+        // ✅ UPDATED: Use coldCallActions instead of direct fetch
+        await removeColdCallStar(message.messageId, session);
         setMessages((prev) =>
           prev.map((item) =>
             item.messageId === message.messageId
@@ -296,18 +255,8 @@ export default function ColdCalling({ topicId, session, onTelemetryEvent }: Cold
         );
         emitTelemetry("cold_call.star", { messageId: message.messageId, action: "remove" });
       } else {
-        const response = await fetch(buildApiUrl("/api/cold-call/stars"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${accessToken}`,
-          },
-          body: JSON.stringify({ messageId: message.messageId }),
-        });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => null);
-          throw new Error(payload?.message ?? "Unable to star this response.");
-        }
+        // ✅ UPDATED: Use coldCallActions instead of direct fetch
+        await starColdCallMessage({ messageId: message.messageId }, session);
         setMessages((prev) =>
           prev.map((item) =>
             item.messageId === message.messageId
@@ -492,9 +441,8 @@ function ColdCallMessageCard({
               type="button"
               onClick={() => onToggleStar(message)}
               disabled={starDisabled}
-              className={`inline-flex items-center gap-1 font-semibold ${
-                message.starredByMe ? "text-[#f59e0b]" : "text-[#4a4845]"
-              }`}
+              className={`inline-flex items-center gap-1 font-semibold ${message.starredByMe ? "text-[#f59e0b]" : "text-[#4a4845]"
+                }`}
             >
               <Star className={`h-4 w-4 ${message.starredByMe ? "fill-[#f59e0b]" : ""}`} />
               <span>{message.starCount}</span>

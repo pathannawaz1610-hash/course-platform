@@ -1,6 +1,7 @@
-import { Prisma } from "@prisma/client";
 import { differenceInDays } from "date-fns";
-import { prisma } from "./prisma";
+import { AnalyticsRepository } from "../repositories/implementations/AnalyticsRepository";
+
+const analyticsRepo = new AnalyticsRepository();
 
 export type TutorLearnerSnapshot = {
   userId: string;
@@ -31,52 +32,17 @@ export type TutorCourseSnapshot = {
 };
 
 export async function buildTutorCourseSnapshot(courseId: string): Promise<TutorCourseSnapshot> {
-  const course = await prisma.course.findUnique({
-    where: { courseId },
-    select: {
-      courseId: true,
-      courseName: true,
-      slug: true,
-      description: true,
-    },
-  });
+  const course = await analyticsRepo.getCourseMetadata(courseId);
 
   if (!course) {
     throw new Error("Course not found");
   }
 
-  const moduleNumbers = await prisma.topic.findMany({
-    where: { courseId, moduleNo: { gt: 0 } },
-    select: { moduleNo: true },
-    distinct: ["moduleNo"],
-    orderBy: { moduleNo: "asc" },
-  });
-  const totalModules = moduleNumbers.length;
+  const totalModules = await analyticsRepo.getDistinctModuleCount(courseId);
 
-  const enrollments = await prisma.enrollment.findMany({
-    where: { courseId },
-    select: {
-      enrollmentId: true,
-      userId: true,
-      enrolledAt: true,
-      status: true,
-      user: {
-        select: {
-          fullName: true,
-          email: true,
-        },
-      },
-    },
-    orderBy: { enrolledAt: "asc" },
-  });
+  const enrollments = await analyticsRepo.getEnrollmentsWithUser(courseId);
 
-  const progressRows = await prisma.$queryRaw<
-    { user_id: string; module_no: number; quiz_passed: boolean; updated_at: Date | null }[]
-  >(Prisma.sql`
-    SELECT user_id, module_no, quiz_passed, updated_at
-    FROM module_progress
-    WHERE course_id = ${courseId}::uuid
-  `);
+  const progressRows = await analyticsRepo.getModuleProgressStats(courseId);
 
   const progressByUser = new Map<string, { passedModules: Set<number>; lastActivity?: Date | null }>();
   progressRows.forEach((row) => {

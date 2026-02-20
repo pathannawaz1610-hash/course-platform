@@ -9,7 +9,10 @@ import { useToast } from '@/hooks/use-toast';
 import type { CartItem, CartResponse } from '@/types/cart';
 import type { CourseListResponse, CourseSummary } from '@/types/content';
 import type { StoredSession } from '@/types/session';
-import { buildApiUrl } from '@/lib/api';
+import { fetchCart as fetchCartAction, addToCart as addToCartAction } from '@/lib/binding/actions/cartActions';
+import { fetchCourses } from '@/lib/binding/actions/courseActions';
+import { logout as logoutAction } from '@/lib/binding/actions/authActions';
+import { buildApiUrl } from '@/lib/api'; // Still needed for Google OAuth redirect
 import {
     Star,
     Clock,
@@ -360,17 +363,16 @@ export default function DashboardPage() {
         }
 
         try {
-            const response = await fetch(buildApiUrl("/cart"), {
-                headers: {
-                    Authorization: `Bearer ${session.accessToken}`,
-                },
-            });
-
-            await applyCartResponse(response);
+            // ✅ UPDATED: Use cartActions instead of direct fetch
+            const items = await fetchCartAction(session);
+            setCart(enrichCartItems(items));
         } catch (error) {
             console.error("Failed to fetch cart", error);
+            if ((error as any).status === 401) {
+                handleUnauthorized();
+            }
         }
-    }, [applyCartResponse, isAuthenticated, session?.accessToken]);
+    }, [enrichCartItems, handleUnauthorized, isAuthenticated, session]);
 
     // Check authentication state on mount
     useEffect(() => {
@@ -413,12 +415,9 @@ export default function DashboardPage() {
         const controller = new AbortController();
         async function fetchCatalogCourses() {
             try {
-                const response = await fetch(buildApiUrl("/courses"), { signal: controller.signal });
-                if (!response.ok) {
-                    return;
-                }
-                const payload = (await response.json()) as CourseListResponse;
-                const normalized = (payload.courses ?? []).map(mapCourseSummaryToCourse);
+                // ✅ UPDATED: Use courseActions instead of direct fetch
+                const courses = await fetchCourses(controller.signal);
+                const normalized = courses.map(mapCourseSummaryToCourse);
                 if (normalized.length > 0) {
                     setCatalogCourses((prev) => mergeCourseCollections(prev, normalized));
                 }
@@ -471,32 +470,23 @@ export default function DashboardPage() {
         }
 
         try {
-            const response = await fetch(buildApiUrl("/cart"), {
-                method: 'POST',
-                headers: {
-                    Authorization: `Bearer ${session.accessToken}`,
-                    'Content-Type': 'application/json',
+            // ✅ UPDATED: Use cartActions instead of direct fetch
+            const items = await addToCartAction(
+                {
+                    id: course.id,
+                    title: course.title,
+                    price: course.price,
+                    description: course.description,
+                    instructor: course.instructor,
+                    duration: course.duration,
+                    rating: course.rating,
+                    students: course.students,
+                    level: course.level,
+                    thumbnail: course.thumbnail,
                 },
-                body: JSON.stringify({
-                    course: {
-                        id: course.id,
-                        title: course.title,
-                        price: course.price,
-                        description: course.description,
-                        instructor: course.instructor,
-                        duration: course.duration,
-                        rating: course.rating,
-                        students: course.students,
-                        level: course.level,
-                        thumbnail: course.thumbnail,
-                    },
-                }),
-            });
-
-            const updated = await applyCartResponse(response);
-            if (!updated) {
-                return;
-            }
+                session
+            );
+            setCart(enrichCartItems(items));
 
             toast({
                 title: "Added to Cart",
@@ -504,6 +494,10 @@ export default function DashboardPage() {
             });
         } catch (error) {
             console.error("Failed to add course to cart", error);
+            if ((error as any).status === 401) {
+                handleUnauthorized();
+                return;
+            }
             toast({
                 variant: "destructive",
                 title: "Could not add to cart",
@@ -560,13 +554,10 @@ export default function DashboardPage() {
     };
 
     const handleLogout = async () => {
-        if (session?.refreshToken) {
+        if (session) {
             try {
-                await fetch(buildApiUrl("/auth/logout"), {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ refreshToken: session.refreshToken }),
-                });
+                // ✅ UPDATED: Use authActions instead of direct fetch
+                await logoutAction(session);
             } catch (error) {
                 console.error("Failed to revoke session", error);
             }

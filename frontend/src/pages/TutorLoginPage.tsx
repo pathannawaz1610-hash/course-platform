@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { loginTutor } from '@/lib/binding/actions/tutorActions';
 import { writeStoredSession, resetSessionHeartbeat } from '@/utils/session';
 import type { StoredSession } from '@/types/session';
 import { SiteLayout } from '@/components/layout/SiteLayout';
@@ -22,11 +22,10 @@ export default function TutorLoginPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await apiRequest('POST', '/api/tutors/login', {
+      const payload = await loginTutor({
         email: email.trim().toLowerCase(),
         password
       });
-      const payload = await response.json();
       const session: StoredSession = {
         accessToken: payload.session?.accessToken,
         accessTokenExpiresAt: payload.session?.accessTokenExpiresAt,

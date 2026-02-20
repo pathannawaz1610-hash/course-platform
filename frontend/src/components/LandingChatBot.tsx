@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { MessageCircle, Send, X, Bot, Loader2 } from "lucide-react";
 import { buildApiUrl } from "@/lib/api";
+import { queryLandingAssistant } from '@/lib/binding/actions/assistantActions';
 import { streamJobResult } from "@/lib/streamJob";
 
 // Themes for the landing page (Retro Teal/Sage/Salmon)
@@ -147,24 +148,12 @@ export default function LandingChatBot({ userName }: LandingChatBotProps) {
         setIsTyping(true);
 
         try {
-            const response = await fetch(buildApiUrl("/api/landing-assistant/query"), {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    question: messageText,
-                    turnCount: messages.length
-                }),
-            });
-
-            const data = await response.json();
-
-            if (!response.ok) {
-                throw new Error(data.message || "Failed to get answer");
-            }
+            // ✅ UPDATED: Use assistantActions instead of direct fetch
+            const data = await queryLandingAssistant(messageText, messages.length);
 
             // ── Resolve the AI answer (async SSE or legacy sync) ──
             let result: Record<string, unknown>;
-            if (response.status === 202 && data.jobId) {
+            if (data.jobId) {
                 // Async path — stream the result via SSE
                 result = await streamJobResult(
                     buildApiUrl(`/api/landing-assistant/stream/${data.jobId}`)

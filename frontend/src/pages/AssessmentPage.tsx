@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { apiRequest } from '@/lib/queryClient';
+import { fetchCourse, fetchAssessmentQuestions, submitAssessment } from '@/lib/binding/actions/courseActions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -38,7 +38,8 @@ export default function AssessmentPage() {
 
   // Fetch assessment questions using course ID
   const { data: assessmentData, isLoading: questionsLoading } = useQuery<{ questions: AssessmentQuestion[] }>({
-    queryKey: [`/api/courses/${course?.id}/assessment`],
+    queryKey: ['assessment-questions', course?.id],
+    queryFn: () => fetchAssessmentQuestions(course?.id!),
     enabled: !!course?.id,
   });
 
@@ -48,8 +49,8 @@ export default function AssessmentPage() {
   // Submit assessment mutation
   const submitAssessmentMutation = useMutation({
     mutationFn: async (assessmentData: any) => {
-      const response = await apiRequest('POST', `/api/courses/${course?.id}/assessment`, assessmentData);
-      return response.json();
+      const response = await submitAssessment(course?.id!, assessmentData);
+      return response;
     },
     onSuccess: (data: { result: any }) => {
       const results = data.result;

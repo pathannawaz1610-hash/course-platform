@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { MessageCircle, Send, X, Bot, User, Loader2 } from "lucide-react";
-import { buildApiUrl } from "@/lib/api";
+import { queryAssistant } from '@/lib/binding/actions/assistantActions';
 import { ensureSessionFresh, logoutAndRedirect, subscribeToSession } from "@/utils/session";
 import type { StoredSession } from "@/types/session";
 
@@ -18,6 +18,7 @@ interface Message {
 interface ChatBotProps {
   courseName?: string;
   courseId?: string;
+  moduleNo?: number;
 }
 
 const createIntroMessage = (courseName?: string): Message => ({
@@ -27,7 +28,7 @@ const createIntroMessage = (courseName?: string): Message => ({
   timestamp: new Date(),
 });
 
-export default function ChatBot({ courseName, courseId }: ChatBotProps) {
+export default function ChatBot({ courseName, courseId, moduleNo }: ChatBotProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>(() => [createIntroMessage(courseName)]);
   const [inputValue, setInputValue] = useState("");
@@ -92,6 +93,7 @@ export default function ChatBot({ courseName, courseId }: ChatBotProps) {
       const answer = await requestAssistantAnswer({
         courseId,
         courseName,
+        moduleNo,
         question,
         accessToken: freshSession.accessToken,
       });
@@ -103,7 +105,7 @@ export default function ChatBot({ courseName, courseId }: ChatBotProps) {
         timestamp: new Date(),
       };
       setMessages((prev) => [...prev, botResponse]);
-    } catch (error) {
+    } catch (error: any) {
       const fallback: Message = {
         id: `error-${Date.now()}`,
         text:
@@ -222,6 +224,7 @@ export default function ChatBot({ courseName, courseId }: ChatBotProps) {
 async function requestAssistantAnswer(params: {
   courseId?: string;
   courseName?: string;
+  moduleNo?: number;
   question: string;
   accessToken: string;
 }): Promise<string> {
@@ -229,41 +232,36 @@ async function requestAssistantAnswer(params: {
     throw new Error("I need to know which course you're viewing before I can help.");
   }
 
-  const response = await fetch(buildApiUrl("/api/assistant/query"), {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${params.accessToken}`,
-    },
-    body: JSON.stringify({
-      question: params.question,
-      courseId: params.courseId,
-      courseTitle: params.courseName,
-    }),
-  });
-
-  if (response.status === 401) {
-    logoutAndRedirect("/");
-    throw new Error("Your session expired. Please sign in again.");
+  try {
+    // ✅ UPDATED: Use assistantActions instead of direct fetch
+    const session = { accessToken: params.accessToken };
+    const result = await queryAssistant(
+      params.question,
+      {
+        courseId: params.courseId,
+        topicId: undefined,
+        moduleNo: params.moduleNo,
+        sessionId: undefined,
+      },
+      session
+    );
+    return result.answer;
+  } catch (error: any) {
+    if (error.status === 401) {
+      logoutAndRedirect("/");
+      throw new Error("Your session expired. Please sign in again.");
+    }
+    if (error.status === 403) {
+      throw new Error(error.message ?? "You are not in the cohort batch, please register first.");
+    }
+    if (error.status === 429) {
+      throw new Error("You are asking very quickly. Please wait a moment before trying again.");
+    }
+    const message = error.message || "The assistant could not process that request.";
+    // If it's the moduleNo error, make it user friendly
+    if (message.includes("moduleNo is required")) {
+      return "I need to know which module you are on to help you. Please try refreshing the page.";
+    }
+    throw new Error(message);
   }
-
-  if (response.status === 403) {
-    const payload = await response.json().catch(() => null);
-    throw new Error(payload?.message ?? "You are not in the cohort batch, please register first.");
-  }
-
-  if (response.status === 429) {
-    throw new Error("You are asking very quickly. Please wait a moment before trying again.");
-  }
-
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.message ?? "The assistant could not process that request.");
-  }
-
-  if (!payload?.answer) {
-    throw new Error("I couldn't find an answer in the course material. Try rephrasing your question.");
-  }
-
-  return payload.answer as string;
 }

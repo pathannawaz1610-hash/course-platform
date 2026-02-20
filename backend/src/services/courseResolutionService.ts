@@ -1,5 +1,8 @@
 import { LRUCache } from "lru-cache";
 import { prisma } from "./prisma";
+import { CourseRepository } from "../repositories/implementations/CourseRepository";
+
+const courseRepo = new CourseRepository();
 
 // --- Cache Configuration ---
 // Options:
@@ -70,17 +73,7 @@ export async function resolveCourseId(courseKey: string | null | undefined): Pro
 
     if (searchValues.length === 0) return null;
 
-    const course = await prisma.course.findFirst({
-        where: {
-            OR: [
-                { slug: { in: searchValues, mode: "insensitive" } },
-                { courseName: { in: searchValues, mode: "insensitive" } }
-            ]
-        },
-        select: { courseId: true },
-    });
-
-    const resultId = course?.courseId ?? null;
+    const resultId = await courseRepo.findCourseIdByPossibleNames(searchValues);
 
     // 5. Update Cache
     if (resultId) {

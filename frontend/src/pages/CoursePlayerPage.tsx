@@ -22,7 +22,11 @@ import {
   ClipboardList,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { buildApiUrl } from "@/lib/api";
+import { fetchAssistantSession, queryAssistant } from '@/lib/binding/actions/assistantActions';
+import { fetchCourse, fetchCourseTopics, checkEnrollment, enrollInCourse, fetchCohortProject as fetchCohortProjectAction } from '@/lib/binding/actions/courseActions';
+import { fetchPromptSuggestions as fetchPromptSuggestionsAction } from '@/lib/binding/actions/lessonActions';
+import { fetchQuizSections, startQuizAttempt, submitQuizAttempt } from '@/lib/binding/actions/quizActions';
+import { buildApiUrl } from "@/lib/api"; // Still needed for cohort projects and other calls
 import { streamJobResult } from "@/lib/streamJob";
 import { subscribeToSession } from "@/utils/session";
 import { recordTelemetryEvent, updateTelemetryAccessToken } from "@/utils/telemetry";
@@ -177,6 +181,7 @@ interface SubModule {
   lockedDueToCooldown?: boolean;
   lockedDueToQuiz?: boolean;
   cooldownUnlockAt?: string | null;
+  simulation?: SimulationPayload | null;
 }
 
 interface Module {
@@ -578,22 +583,8 @@ const CoursePlayerPage: React.FC = () => {
 
     setChatHistoryLoading(true);
     try {
-      const res = await fetch(
-        buildApiUrl(
-          `/assistant/session?courseId=${encodeURIComponent(courseIdForChat)}&topicId=${topicIdForChat}`,
-        ),
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-          credentials: "include",
-        },
-      );
-      const payload = await res.json().catch(() => null);
-      if (!res.ok) {
-        return;
-      }
+      // ✅ UPDATED: Use assistantActions instead of direct fetch
+      const payload = await fetchAssistantSession(courseIdForChat, topicIdForChat, session);
       const history = Array.isArray(payload?.messages) ? payload.messages : [];
       if (history.length > 0) {
         const welcomeId = `welcome-${activeLesson?.slug ?? "welcome"}`;
@@ -627,17 +618,9 @@ const CoursePlayerPage: React.FC = () => {
   const fetchTopics = useCallback(async () => {
     if (!courseKey) return;
     try {
-      const headers: HeadersInit = {};
-      if (session?.accessToken) {
-        headers.Authorization = `Bearer ${session.accessToken}`;
-      }
-      const res = await fetch(buildApiUrl(`/api/lessons/courses/${courseKey}/topics`), {
-        credentials: "include",
-        headers,
-      });
-      if (!res.ok) throw new Error("Failed to load topics");
-      const data = await res.json();
-      const mapped: Lesson[] = (data.topics ?? []).map((t: any) => ({
+      // ✅ UPDATED: Use courseActions instead of direct fetch
+      const data = await fetchCourseTopics(courseKey, session);
+      const mapped: Lesson[] = (data ?? []).map((t: any) => ({
         topicId: t.topicId,
         courseId: t.courseId,
         moduleNo: t.moduleNo,
@@ -667,33 +650,15 @@ const CoursePlayerPage: React.FC = () => {
     }
   }, [courseKey, session?.accessToken, setLocation, toast]);
 
-  const fetchPromptSuggestions = useCallback(async () => {
-    if (!courseKey || !session?.accessToken) {
-      setStarterSuggestions([]);
-      return;
-    }
+  const loadStarterSuggestions = useCallback(async () => {
+    if (!courseKey || !session?.accessToken) return;
     const topicId = activeLesson?.topicId;
-    const query = new URLSearchParams();
-    if (topicId) {
-      query.set("topicId", topicId);
-    }
-    const queryString = query.toString();
     setSuggestionsLoading(true);
     try {
-      const res = await fetch(
-        buildApiUrl(`/api/lessons/courses/${courseKey}/prompts${queryString ? `?${queryString}` : ""}`),
-        {
-          credentials: "include",
-          headers: {
-            Authorization: `Bearer ${session.accessToken}`,
-          },
-        },
-      );
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-      const data = await res.json();
-      setStarterSuggestions(Array.isArray(data?.suggestions) ? data.suggestions : []);
+      // ✅ UPDATED: Use lessonActions instead of direct fetch
+      const data = await fetchPromptSuggestionsAction(courseKey, topicId, session);
+      const list = Array.isArray(data) ? data : [];
+      setStarterSuggestions(list);
     } catch (error) {
       console.error("Failed to load prompt suggestions", error);
       setStarterSuggestions([]);
@@ -710,13 +675,9 @@ const CoursePlayerPage: React.FC = () => {
   const fetchSections = useCallback(async () => {
     if (!courseKey || !session?.accessToken) return;
     try {
-      const res = await fetch(buildApiUrl(`/api/quiz/sections/${courseKey}`), {
-        credentials: "include",
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      const list: QuizSection[] = (data.sections ?? []).map((s: any) => ({
+      // ✅ UPDATED: Use quizActions instead of direct fetch
+      const data = await fetchQuizSections(courseKey, session);
+      const list: QuizSection[] = (data ?? []).map((s: any) => ({
         moduleNo: s.moduleNo,
         topicPairIndex: s.topicPairIndex,
         title: s.title ?? `Module ${s.moduleNo} - Topic pair ${s.topicPairIndex}`,
@@ -749,24 +710,12 @@ const CoursePlayerPage: React.FC = () => {
     setCohortProjectLoading(true);
     setCohortProjectError(null);
     try {
-      const res = await fetch(buildApiUrl(`/api/cohort-projects/${courseKey}`), {
-        credentials: "include",
-        headers: { Authorization: `Bearer ${session.accessToken}` },
-      });
-      if (!res.ok) {
-        const payload = await res.json().catch(() => null);
-        const message =
-          typeof payload?.message === "string" ? payload.message : "Unable to load cohort project.";
-        setCohortProject(null);
-        setCohortProjectBatch(null);
-        setCohortProjectError(message);
-        return;
-      }
+      // ✅ UPDATED: Use fetchCohortProject action
+      const data = await fetchCohortProjectAction(courseKey, session);
 
-      const data = await res.json();
-      const parsed = parseCohortProjectPayload(data?.project);
+      const parsed = parseCohortProjectPayload(data.project);
       setCohortProject(parsed);
-      setCohortProjectBatch(typeof data?.batchNo === "number" ? data.batchNo : null);
+      setCohortProjectBatch(typeof data.batchNo === "number" ? data.batchNo : null);
       if (!parsed) {
         setCohortProjectError("Project details are incomplete.");
       }
@@ -817,6 +766,7 @@ const CoursePlayerPage: React.FC = () => {
             moduleNo: lesson.moduleNo,
             topicNumber: lesson.topicNumber,
             unlocked: true,
+            simulation: lesson.simulation,
           });
         });
         return {
@@ -855,6 +805,7 @@ const CoursePlayerPage: React.FC = () => {
           lockedDueToCooldown: moduleLockedDueToCooldown,
           lockedDueToQuiz: moduleLockedDueToQuiz,
           cooldownUnlockAt: moduleCooldownUnlockAt,
+          simulation: lesson.simulation,
         });
         if ((idx + 1) % 2 === 0) {
           submodules.push({
@@ -903,8 +854,8 @@ const CoursePlayerPage: React.FC = () => {
 
   useEffect(() => {
     setInlineFollowUps({});
-    void fetchPromptSuggestions();
-  }, [fetchPromptSuggestions]);
+    void loadStarterSuggestions();
+  }, [loadStarterSuggestions]);
 
   useEffect(() => {
     if (!activeLesson?.topicId) {
@@ -1168,19 +1119,16 @@ const CoursePlayerPage: React.FC = () => {
   };
 
   const handleStartQuiz = async (moduleNo: number, topicPairIndex: number) => {
-    if (!courseKey) return;
+    if (!courseKey || !session) return;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (session?.accessToken) headers.Authorization = `Bearer ${session.accessToken}`;
     emitTelemetry("quiz.start", { topicPairIndex }, { moduleNo, topicId: null });
     try {
-      const res = await fetch(buildApiUrl(`/api/quiz/attempts`), {
-        method: "POST",
-        credentials: "include",
-        headers,
-        body: JSON.stringify({ courseId: courseKey, moduleNo, topicPairIndex, limit: 5 }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      // ✅ UPDATED: Use quizActions instead of direct fetch
+      const data = await startQuizAttempt(
+        { courseId: courseKey, moduleNo, topicPairIndex },
+        session
+      );
       setSelectedSection({ moduleNo, topicPairIndex });
       setQuizAttemptId(data.attemptId ?? null);
       setQuizQuestions(data.questions ?? []);
@@ -1203,7 +1151,7 @@ const CoursePlayerPage: React.FC = () => {
   };
 
   const handleSubmitQuiz = async () => {
-    if (!quizAttemptId) return;
+    if (!quizAttemptId || !session) return;
     const headers: Record<string, string> = { "Content-Type": "application/json" };
     if (session?.accessToken) headers.Authorization = `Bearer ${session.accessToken}`;
     try {
@@ -1213,14 +1161,8 @@ const CoursePlayerPage: React.FC = () => {
         { answered: payload.length, totalQuestions: quizQuestions.length },
         { moduleNo: selectedSection?.moduleNo ?? activeLesson?.moduleNo ?? null },
       );
-      const res = await fetch(buildApiUrl(`/api/quiz/attempts/${quizAttemptId}/submit`), {
-        method: "POST",
-        credentials: "include",
-        headers,
-        body: JSON.stringify({ answers: payload }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      // ✅ UPDATED: Use quizActions instead of direct fetch
+      const data = await submitQuizAttempt(quizAttemptId, payload, session);
       const base = data?.result ?? {};
       emitTelemetry(
         base.passed ? "quiz.pass" : "quiz.fail",
@@ -1349,44 +1291,28 @@ const CoursePlayerPage: React.FC = () => {
         } else if (moduleNoForChat !== null && moduleNoForChat !== undefined) {
           body.moduleNo = moduleNoForChat;
         }
-        const res = await fetch(buildApiUrl("/assistant/query"), {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${session.accessToken}`,
+        // ✅ UPDATED: Use assistantActions instead of direct fetch
+        const result = await queryAssistant(
+          question,
+          {
+            courseId: courseIdForChat,
+            topicId: topicIdForChat,
+            moduleNo: moduleNoForChat ?? undefined,
+            sessionId: chatSessionId || null,
           },
-          credentials: "include",
-          body: JSON.stringify(body),
-        });
-        const payload = await res.json().catch(() => null);
-        if (!res.ok) {
-          const msg = payload?.message || (await res.text()) || "Tutor unavailable";
-          throw new Error(msg);
+          session
+        );
+        if (!result) {
+          throw new Error("Tutor unavailable");
         }
 
         let answer: string;
         let sessionId: string | undefined;
         let nextSuggestions: Array<{ id: string; promptText: string; answer: string | null }> = [];
 
-        if (res.status === 202 && payload?.jobId) {
-          // ── Async path: SSE stream for instant delivery ──
-          if (typeof payload?.sessionId === "string") {
-            setChatSessionId(payload.sessionId);
-          }
-          const jobId = payload.jobId as string;
-          const result = await streamJobResult(
-            buildApiUrl(`/assistant/stream/${jobId}`),
-            { Authorization: `Bearer ${session.accessToken}` },
-          );
-          answer = (result?.answer as string) ?? "I could not find an answer for that right now.";
-          sessionId = typeof result?.sessionId === "string" ? result.sessionId : undefined;
-          nextSuggestions = Array.isArray(result?.nextSuggestions) ? result.nextSuggestions : [];
-        } else {
-          // ── Sync path: suggestion-based queries return 200 with answer inline ──
-          answer = payload?.answer ?? "I could not find an answer for that right now.";
-          sessionId = typeof payload?.sessionId === "string" ? payload.sessionId : undefined;
-          nextSuggestions = Array.isArray(payload?.nextSuggestions) ? payload.nextSuggestions : [];
-        }
+        // Handle response - queryAssistant returns { answer, sessionId }
+        answer = result.answer;
+        sessionId = result.sessionId;
 
         const botId = makeId();
         botMessageId = botId;

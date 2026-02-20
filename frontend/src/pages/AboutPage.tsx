@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Sparkles, Target, Users2, ShieldCheck, TrendingUp } from "lucide-react";
-import { buildApiUrl } from "@/lib/api";
+import { fetchPageContent } from '@/lib/binding/actions/pageActions';
 import type { PageContentEntry, PageContentResponse } from "@/types/content";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,12 +24,9 @@ export default function AboutPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const response = await fetch(buildApiUrl("/pages/about"), { signal: controller.signal });
-        if (!response.ok) {
-          throw new Error("Failed to load page content");
-        }
-        const payload = (await response.json()) as PageContentResponse;
-        setContent(payload.page);
+        // ✅ UPDATED: Use pageActions
+        const pageContent = await fetchPageContent("about", controller.signal);
+        setContent(pageContent as unknown as PageContentEntry);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
           return;

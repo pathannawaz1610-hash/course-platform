@@ -1,4 +1,5 @@
 import { buildApiUrl } from "@/lib/api";
+import { postActivityEvents } from '@/lib/binding/actions/telemetryActions';
 
 type TelemetryEvent = {
   courseId: string;
@@ -25,19 +26,13 @@ async function flushBuffer(): Promise<void> {
   const events = buffer.slice();
   buffer = [];
   try {
-    await fetch(buildApiUrl("/api/activity/events"), {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${currentToken}`,
-      },
-      credentials: "include",
-      body: JSON.stringify({ events: events.map((event) => ({ ...event, occurredAt: event.occurredAt ?? new Date().toISOString() })) }),
-    });
+    // ✅ UPDATED: Use telemetryActions
+    await postActivityEvents(events, currentToken);
   } catch (error) {
     console.warn("Failed to send telemetry events", error);
   }
 }
+
 
 function scheduleFlush(): void {
   if (flushTimer || !isBrowser) {

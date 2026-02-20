@@ -33,7 +33,18 @@ const asStringArray = (value: unknown): string[] => {
 };
 
 const normalizeSimulation = (simulation: SimulationPayload): NormalizedSimulation => {
-  const raw = simulation.body as Record<string, unknown> | null;
+  let raw: Record<string, unknown> | null = null;
+
+  if (typeof simulation.body === "string" && simulation.body.trim().length > 0) {
+    try {
+      raw = JSON.parse(simulation.body);
+    } catch (e) {
+      console.error("Failed to parse simulation body string", e);
+    }
+  } else if (typeof simulation.body === "object" && simulation.body !== null) {
+    raw = simulation.body as Record<string, unknown>;
+  }
+
   const scenario = typeof raw?.scenario === "string" ? raw.scenario : undefined;
   const contextStory = typeof raw?.context_story === "string" ? raw.context_story : undefined;
   const goal = typeof raw?.goal === "string" ? raw.goal : undefined;
@@ -46,8 +57,8 @@ const normalizeSimulation = (simulation: SimulationPayload): NormalizedSimulatio
       ? (raw?.dependency_from_previous as string | null)
       : undefined;
   const stepsSource = Array.isArray(raw?.steps) ? raw?.steps : [];
-  const steps = stepsSource
-    .map((entry, index) => {
+  const steps: NormalizedStep[] = stepsSource
+    .map((entry, index): NormalizedStep | null => {
       if (typeof entry === "string") {
         return { title: `Step ${index + 1}`, description: entry };
       }
@@ -64,7 +75,7 @@ const normalizeSimulation = (simulation: SimulationPayload): NormalizedSimulatio
       const task = typeof node.task === "string" ? node.task : undefined;
       return { title, description, challenge, task };
     })
-    .filter((step): step is NormalizedStep => Boolean(step));
+    .filter((step): step is NormalizedStep => step !== null);
 
   return {
     scenario,

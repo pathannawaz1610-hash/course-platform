@@ -1,12 +1,12 @@
 import express, { type Request } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../utils/asyncHandler";
-import { prisma } from "../services/prisma";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
 import { verifyAccessToken } from "../services/sessionService";
 import { ensurePersonaProfile } from "../services/personaProfileService";
-
 import { resolveCourseId } from "../services/courseResolutionService";
+import { CourseRepository } from "../repositories/implementations/CourseRepository";
+import type { TopicSummary, ContentAssetRow } from "../repositories/interfaces/ICourseRepository";
 
 const progressPayloadSchema = z.object({
   progress: z.number().int().min(0).max(100),
@@ -19,6 +19,7 @@ const promptQuerySchema = z.object({
 });
 
 export const lessonsRouter = express.Router();
+const courseRepo = new CourseRepository();
 
 type LessonStatus = "not_started" | "in_progress" | "completed";
 
@@ -140,13 +141,9 @@ function parseContentLayout(rawTextContent: string | null | undefined): ContentL
   }
 }
 
-type ContentAssetRecord = {
-  topicId: string;
-  contentKey: string;
-  contentType: string;
-  personaKey: string | null;
-  payload: unknown;
-};
+// Reusing repo type ContentAssetRow but slightly different structure in helper functions
+// The helper functions expect a specific shape. Let's adapt if needed or use ContentAssetRow.
+type ContentAssetRecord = ContentAssetRow;
 
 function buildAssetIndex(assets: ContentAssetRecord[]): Map<string, ContentAssetRecord> {
   const index = new Map<string, ContentAssetRecord>();
@@ -250,7 +247,6 @@ const mapPromptSuggestion = (suggestion: { suggestionId: string; promptText: str
 });
 
 
-
 lessonsRouter.get(
   "/modules/:moduleNo/topics",
   asyncHandler(async (req, res) => {
@@ -260,30 +256,7 @@ lessonsRouter.get(
       return;
     }
 
-    // Pull every topic for the requested module so the frontend can hydrate module content dynamically.
-    const topics = await prisma.topic.findMany({
-      where: { moduleNo },
-      orderBy: { topicNumber: "asc" },
-      select: {
-        topicId: true,
-        courseId: true,
-        moduleNo: true,
-        moduleName: true,
-        topicNumber: true,
-        topicName: true,
-        pptUrl: true,
-        videoUrl: true,
-        textContent: true,
-        isPreview: true,
-        contentType: true,
-        simulation: {
-          select: {
-            title: true,
-            body: true,
-          },
-        },
-      },
-    });
+    const topics = await courseRepo.getModuleTopics(moduleNo);
 
     const contentKeyByTopic = new Map<string, Set<string>>();
     const allContentKeys = new Set<string>();
@@ -304,23 +277,12 @@ lessonsRouter.get(
       keys.forEach((key) => allContentKeys.add(key));
     });
 
-    const assets =
-      contentKeyByTopic.size > 0
-        ? await prisma.topicContentAsset.findMany({
-          where: {
-            topicId: { in: Array.from(contentKeyByTopic.keys()) },
-            contentKey: { in: Array.from(allContentKeys) },
-            personaKey: null,
-          },
-          select: {
-            topicId: true,
-            contentKey: true,
-            contentType: true,
-            personaKey: true,
-            payload: true,
-          },
-        })
-        : [];
+    const assets = await courseRepo.getTopicContentAssets({
+      topicIds: Array.from(contentKeyByTopic.keys()),
+      contentKeys: Array.from(allContentKeys),
+      personaKey: null
+    });
+
     const assetIndex = buildAssetIndex(assets);
 
     res.status(200).json({
@@ -353,29 +315,7 @@ lessonsRouter.get(
       : null;
     const personaKey = personaProfile?.personaKey ?? null;
 
-    const topics = await prisma.topic.findMany({
-      where: { courseId: resolvedCourseId },
-      orderBy: [{ moduleNo: "asc" }, { topicNumber: "asc" }],
-      select: {
-        topicId: true,
-        courseId: true,
-        moduleNo: true,
-        moduleName: true,
-        topicNumber: true,
-        topicName: true,
-        pptUrl: true,
-        videoUrl: true,
-        textContent: true,
-        isPreview: true,
-        contentType: true,
-        simulation: {
-          select: {
-            title: true,
-            body: true,
-          },
-        },
-      },
-    });
+    const topics = await courseRepo.getCourseTopics(resolvedCourseId);
 
     const contentKeyByTopic = new Map<string, Set<string>>();
     const allContentKeys = new Set<string>();
@@ -396,24 +336,12 @@ lessonsRouter.get(
       keys.forEach((key) => allContentKeys.add(key));
     });
 
-    const personaFilters = personaKey ? [{ personaKey }, { personaKey: null }] : [{ personaKey: null }];
-    const assets =
-      contentKeyByTopic.size > 0
-        ? await prisma.topicContentAsset.findMany({
-          where: {
-            topicId: { in: Array.from(contentKeyByTopic.keys()) },
-            contentKey: { in: Array.from(allContentKeys) },
-            OR: personaFilters,
-          },
-          select: {
-            topicId: true,
-            contentKey: true,
-            contentType: true,
-            personaKey: true,
-            payload: true,
-          },
-        })
-        : [];
+    const assets = await courseRepo.getTopicContentAssets({
+      topicIds: Array.from(contentKeyByTopic.keys()),
+      contentKeys: Array.from(allContentKeys),
+      personaKey: personaKey
+    });
+
     const assetIndex = buildAssetIndex(assets);
 
     res.status(200).json({
@@ -453,27 +381,11 @@ lessonsRouter.get(
     }
 
     const { topicId, parentSuggestionId } = parsed.data;
-    const suggestionWhere: Record<string, unknown> = {
-      isActive: true,
-    };
 
-    if (parentSuggestionId) {
-      suggestionWhere.parentSuggestionId = parentSuggestionId;
-    } else {
-      suggestionWhere.parentSuggestionId = null;
-      const orClauses: Array<Record<string, unknown>> = [
-        { AND: [{ courseId: resolvedCourseId }, { topicId: null }] },
-      ];
-      if (topicId) {
-        orClauses.push({ topicId });
-      }
-      suggestionWhere.OR = orClauses;
-    }
-
-    const prompts = await prisma.topicPromptSuggestion.findMany({
-      where: suggestionWhere,
-      orderBy: [{ displayOrder: "asc" }, { createdAt: "asc" }],
-      select: { suggestionId: true, promptText: true, answer: true },
+    const prompts = await courseRepo.getTopicPrompts({
+      courseId: resolvedCourseId,
+      topicId,
+      parentSuggestionId
     });
 
     res.status(200).json({
@@ -499,11 +411,7 @@ lessonsRouter.get(
       return;
     }
 
-    const topics = await prisma.topic.findMany({
-      where: { courseId: resolvedCourseId },
-      select: { topicId: true, moduleNo: true, topicNumber: true, topicName: true },
-      orderBy: [{ moduleNo: "asc" }, { topicNumber: "asc" }],
-    });
+    const topics = await courseRepo.getCourseTopics(resolvedCourseId);
 
     const totalCount = topics.length;
     if (totalCount === 0) {
@@ -517,10 +425,7 @@ lessonsRouter.get(
     }
 
     const topicIds = topics.map((topic) => topic.topicId);
-    const progressRows = await prisma.topicProgress.findMany({
-      where: { userId: auth.userId, topicId: { in: topicIds } },
-      select: { topicId: true, isCompleted: true, lastPosition: true, updatedAt: true, completedAt: true },
-    });
+    const progressRows = await courseRepo.getTopicProgress(auth.userId, topicIds);
 
     const progressByTopic = new Map(
       progressRows.map((row) => [row.topicId, row]),
@@ -571,20 +476,13 @@ lessonsRouter.get(
       return;
     }
 
-    const topic = await prisma.topic.findUnique({
-      where: { topicId: lessonId },
-      select: { topicId: true, courseId: true },
-    });
-
+    const topic = await courseRepo.getTopicById(lessonId);
     if (!topic) {
       res.status(404).json({ message: "Lesson not found" });
       return;
     }
 
-    const record = await prisma.topicProgress.findUnique({
-      where: { userId_topicId: { userId: auth.userId, topicId: topic.topicId } },
-      select: { topicId: true, isCompleted: true, lastPosition: true, updatedAt: true, completedAt: true, userId: true },
-    });
+    const record = await courseRepo.getSingleTopicProgress(auth.userId, lessonId);
 
     const progressPercent = clampProgress(record?.lastPosition ?? 0);
     const status: LessonStatus =
@@ -619,11 +517,7 @@ lessonsRouter.put(
       return;
     }
 
-    const topic = await prisma.topic.findUnique({
-      where: { topicId: lessonId },
-      select: { topicId: true, courseId: true },
-    });
-
+    const topic = await courseRepo.getTopicById(lessonId);
     if (!topic) {
       res.status(404).json({ message: "Lesson not found" });
       return;
@@ -632,39 +526,17 @@ lessonsRouter.put(
     const { progress, status } = progressPayloadSchema.parse(req.body ?? {});
     const clampedProgress = clampProgress(progress);
     const shouldComplete = status === "completed" || clampedProgress >= 100;
+
+    const existing = await courseRepo.getSingleTopicProgress(auth.userId, lessonId);
     const now = new Date();
-
-    const existing = await prisma.topicProgress.findUnique({
-      where: { userId_topicId: { userId: auth.userId, topicId: topic.topicId } },
-      select: { completedAt: true },
-    });
-
     const completedAt = shouldComplete ? existing?.completedAt ?? now : null;
 
-    const record = await prisma.topicProgress.upsert({
-      where: { userId_topicId: { userId: auth.userId, topicId: topic.topicId } },
-      create: {
-        topicId: topic.topicId,
-        userId: auth.userId,
-        isCompleted: shouldComplete,
-        // Store percentage in lastPosition until we track duration-based timestamps.
-        lastPosition: clampedProgress,
-        completedAt,
-      },
-      update: {
-        isCompleted: shouldComplete,
-        lastPosition: clampedProgress,
-        completedAt,
-        updatedAt: now,
-      },
-      select: {
-        topicId: true,
-        isCompleted: true,
-        lastPosition: true,
-        updatedAt: true,
-        completedAt: true,
-        userId: true,
-      },
+    const record = await courseRepo.upsertTopicProgress({
+      userId: auth.userId,
+      topicId: lessonId,
+      isCompleted: shouldComplete,
+      lastPosition: clampedProgress,
+      completedAt: completedAt
     });
 
     const normalizedStatus: LessonStatus = record.isCompleted

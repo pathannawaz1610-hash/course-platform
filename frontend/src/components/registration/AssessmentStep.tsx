@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchAssessmentQuestions, submitRegistration } from '@/lib/registrationApi'
+import { fetchAssessmentQuestions, submitRegistration } from '@/lib/binding/actions/registrationActions'
 import { AssessmentStepProps, Question, Answer, FormErrors } from '@/types/registration'
 
 const AssessmentStep = ({ onSubmit, studentData }: AssessmentStepProps) => {

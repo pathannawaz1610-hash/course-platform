@@ -3,7 +3,7 @@ import { useLocation, useParams } from "wouter";
 import { Loader2, ShieldCheck, Sparkles, Target } from "lucide-react";
 import { ensureSessionFresh, readStoredSession } from "@/utils/session";
 import { useToast } from "@/hooks/use-toast";
-import { buildApiUrl } from "@/lib/api";
+import { updatePersonalization, fetchPersonalization } from '@/lib/binding/actions/lessonActions';
 
 type StudyPersona = "normal" | "sports" | "cooking" | "adventure";
 type PersonalizedPersona = Exclude<StudyPersona, "normal">;
@@ -169,22 +169,15 @@ const LearningPathPage: React.FC = () => {
 
       try {
         setIsSubmitting(true);
-        const res = await fetch(buildApiUrl(`/api/lessons/courses/${courseId}/personalization`), {
-          method: "POST",
-          credentials: "include",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ persona }),
-        });
-
-        if (!res.ok && res.status !== 204) {
-          throw new Error(await res.text());
-        }
+        // ✅ UPDATED: Use lessonActions instead of direct fetch
+        await updatePersonalization(courseId, { persona }, { accessToken: token });
         return true;
       } catch (error) {
         console.error("Failed to save personalization", error);
+        if ((error as any).status === 401) {
+          goToDetails();
+          return false;
+        }
         toast({
           variant: "destructive",
           title: "Unable to save preference",
@@ -254,24 +247,17 @@ const LearningPathPage: React.FC = () => {
       setSessionToken(refreshed.accessToken);
 
       try {
-        const res = await fetch(buildApiUrl(`/api/lessons/courses/${courseId}/personalization`), {
-          credentials: "include",
-          headers: {
-            Authorization: `Bearer ${refreshed.accessToken}`,
-          },
-        });
-
-        if (res.ok) {
-          const data = await res.json().catch(() => null);
-          if (data?.hasPreference) {
-            goToPlayer();
-            return;
-          }
-        } else if (res.status === 401) {
-          goToDetails();
+        // ✅ UPDATED: Use lessonActions instead of direct fetch
+        const data = await fetchPersonalization(courseId, { accessToken: refreshed.accessToken });
+        if (data?.hasPreference) {
+          goToPlayer();
           return;
         }
       } catch (error) {
+        if ((error as any).status === 401) {
+          goToDetails();
+          return;
+        }
         console.error("Failed to verify personalization status", error);
       }
 

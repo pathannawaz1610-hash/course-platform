@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 // Feature flags for future course availability
 const ON_DEMAND_AVAILABLE = false; // set to true when on-demand courses are ready
 const WORKSHOP_AVAILABLE = true; // set to true when workshop courses are ready
-import { submitRegistration } from "@/lib/registrationApi";
+import { submitRegistration } from "@/lib/binding/actions/registrationActions";
+import { supabase } from "@/lib/registrationSupabase";
 import {
     RegistrationStepProps,
     RegistrationFormData,
@@ -46,8 +47,10 @@ const RegistrationStep = ({ onSubmit, programType, selectedCourse, offeringId, o
         if (programType !== 'cohort') return;
 
         const fetchSlots = async () => {
+            // @ts-ignore - Supabase client might be null in some environments
             if (!supabase) return;
 
+            // @ts-ignore
             const { data, error } = await supabase
                 .from("alloted_timeslotes")
                 .select("slot_name")

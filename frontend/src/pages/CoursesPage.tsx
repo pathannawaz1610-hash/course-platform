@@ -4,7 +4,8 @@ import { BookOpen, Star, ArrowRight, Play } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { buildApiUrl } from "@/lib/api";
+import { fetchCourses } from '@/lib/binding/actions/courseActions';
+import { fetchPageContent } from '@/lib/binding/actions/pageActions';
 import type { CourseSummary, CourseListResponse, PageContentEntry, PageContentResponse } from "@/types/content";
 import { SiteLayout } from "@/components/layout/SiteLayout";
 import { useToast } from "@/hooks/use-toast";
@@ -102,21 +103,24 @@ export default function CoursesPage() {
       setIsLoading(true);
       setError(null);
       try {
-        const [coursesResponse, pageResponse] = await Promise.all([
-          fetch(buildApiUrl("/courses"), { signal: controller.signal }),
-          fetch(buildApiUrl("/pages/courses"), { signal: controller.signal }),
+        // ✅ UPDATED: Use courseActions and pageActions
+        const [coursesData, pageData] = await Promise.all([
+          fetchCourses(controller.signal),
+          fetchPageContent("courses", controller.signal),
         ]);
 
-        if (!coursesResponse.ok) {
-          throw new Error("Unable to load courses");
-        }
-        const coursesPayload = (await coursesResponse.json()) as CourseListResponse;
-        setCourses(coursesPayload.courses ?? []);
-
-        if (pageResponse.ok) {
-          const pagePayload = (await pageResponse.json()) as PageContentResponse;
-          setPageContent(pagePayload.page);
-        }
+        const mappedCourses: CourseSummary[] = coursesData.map(c => ({
+          ...c,
+          description: c.description || "",
+          priceCents: c.priceCents || (c.price ? c.price * 100 : 0),
+          price: c.price || 0,
+          instructor: c.instructor || "Ottolearn Instructor",
+          level: c.level || "Beginner",
+          category: c.category || "Uncategorized",
+          slug: c.slug || c.id
+        }));
+        setCourses(mappedCourses);
+        setPageContent(pageData as unknown as PageContentEntry);
       } catch (err) {
         if ((err as Error).name === "AbortError") {
           return;
@@ -143,7 +147,7 @@ export default function CoursesPage() {
     });
     const configured = (pageContent?.sections.categories ?? []) as string[];
     configured.forEach((category) => categories.add(category));
-    return ["all", ...categories];
+    return ["all", ...Array.from(categories)];
   }, [courses, pageContent?.sections.categories]);
 
   const filteredCourses = useMemo(() => {
@@ -243,8 +247,8 @@ export default function CoursesPage() {
               type="button"
               onClick={() => setSelectedCategory(category)}
               className={`rounded-full border px-4 py-1 text-sm font-semibold transition-all duration-300 ${selectedCategory === category
-                  ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
-                  : "border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800"
+                ? "border-emerald-500 bg-emerald-500 text-white shadow-sm"
+                : "border-slate-200 text-slate-600 hover:border-slate-300 hover:text-slate-800"
                 }`}
             >
               {category === "all" ? "All tracks" : category}

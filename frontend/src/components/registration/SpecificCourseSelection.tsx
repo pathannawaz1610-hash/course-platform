@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useLocation } from 'wouter'
-import { fetchOfferings } from '@/lib/registrationApi'
+import { fetchOfferings } from '@/lib/binding/actions/registrationActions'
 
 interface SpecificCourseSelectionProps {
     programType: 'cohort' | 'ondemand' | 'workshop'

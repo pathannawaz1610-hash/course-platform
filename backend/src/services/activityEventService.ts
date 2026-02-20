@@ -1,5 +1,10 @@
 import { Prisma } from "@prisma/client";
-import { prisma } from "./prisma";
+import { ActivityRepository } from "../repositories/implementations/ActivityRepository";
+import type { LearnerStatusRow, ActivityEventRow } from "../repositories/interfaces/IActivityRepository";
+
+const activityRepo = new ActivityRepository();
+
+export type { LearnerStatusRow };
 
 export type TelemetryEventInput = {
   courseId: string;
@@ -8,18 +13,6 @@ export type TelemetryEventInput = {
   eventType: string;
   payload?: Prisma.JsonValue;
   occurredAt?: Date | null;
-};
-
-export type LearnerStatusRow = {
-  eventId: string;
-  userId: string;
-  courseId: string;
-  moduleNo: number | null;
-  topicId: string | null;
-  eventType: string;
-  derivedStatus: string | null;
-  statusReason: string | null;
-  createdAt: Date;
 };
 
 const VIDEO_EVENT_PREFIXES = ["video.play", "video.resume", "video.buffer.end", "progress.snapshot", "persona.", "notes.", "lesson.", "cold_call.", "tutor.response"];
@@ -68,7 +61,7 @@ export async function recordActivityEvents(userId: string, events: TelemetryEven
     return;
   }
 
-  const rows = events.map((event) => {
+  const rows: ActivityEventRow[] = events.map((event) => {
     const { derivedStatus, statusReason } = classifyEvent(event.eventType, event.payload);
     return {
       userId,
@@ -76,47 +69,18 @@ export async function recordActivityEvents(userId: string, events: TelemetryEven
       moduleNo: event.moduleNo ?? null,
       topicId: event.topicId ?? null,
       eventType: event.eventType,
-      payload: event.payload ?? Prisma.JsonNull,
+      payload: event.payload,
       derivedStatus: derivedStatus ?? null,
       statusReason: statusReason ?? null,
       createdAt: event.occurredAt ?? new Date(),
     };
   });
 
-  await prisma.learnerActivityEvent.createMany({
-    data: rows,
-  });
+  await activityRepo.recordEvents(rows);
 }
 
 export async function getLatestStatusesForCourse(courseId: string): Promise<LearnerStatusRow[]> {
-  const windowedEvents = await prisma.$queryRaw<LearnerStatusRow[]>(Prisma.sql`
-    SELECT
-      ranked.event_id AS "eventId",
-      ranked.user_id AS "userId",
-      ranked.course_id AS "courseId",
-      ranked.module_no AS "moduleNo",
-      ranked.topic_id AS "topicId",
-      ranked.event_type AS "eventType",
-      ranked.derived_status AS "derivedStatus",
-      ranked.status_reason AS "statusReason",
-      ranked.created_at AS "createdAt"
-    FROM (
-      SELECT
-        event_id,
-        user_id,
-        course_id,
-        module_no,
-        topic_id,
-        event_type,
-        derived_status,
-        status_reason,
-        created_at,
-        ROW_NUMBER() OVER (PARTITION BY user_id ORDER BY created_at DESC) AS rn
-      FROM learner_activity_events
-      WHERE course_id = ${courseId}::uuid
-    ) ranked
-    WHERE ranked.rn <= 20
-  `);
+  const windowedEvents = await activityRepo.getLatestStatusesForCourse(courseId);
 
   const grouped = new Map<string, LearnerStatusRow[]>();
   windowedEvents.forEach((row) => {
@@ -143,28 +107,7 @@ export async function getLearnerHistory(params: {
   before?: Date | null;
 }): Promise<LearnerStatusRow[]> {
   const { userId, courseId, limit, before } = params;
-  const beforeFilter = before ? Prisma.sql`AND created_at < ${before}` : Prisma.sql``;
-
-  const rows = await prisma.$queryRaw<LearnerStatusRow[]>(Prisma.sql`
-    SELECT
-      event_id AS "eventId",
-      user_id AS "userId",
-      course_id AS "courseId",
-      module_no AS "moduleNo",
-      topic_id AS "topicId",
-      event_type AS "eventType",
-      derived_status AS "derivedStatus",
-      status_reason AS "statusReason",
-      created_at AS "createdAt"
-    FROM learner_activity_events
-    WHERE user_id = ${userId}::uuid
-      AND course_id = ${courseId}::uuid
-      ${beforeFilter}
-    ORDER BY created_at DESC
-    LIMIT ${limit}
-  `);
-
-  return rows;
+  return activityRepo.getLearnerHistory(userId, courseId, limit, before);
 }
 
 export async function ensureTutorOrAdminAccess(userId: string, courseId: string, role?: string | null): Promise<void> {
@@ -172,16 +115,9 @@ export async function ensureTutorOrAdminAccess(userId: string, courseId: string,
     return;
   }
 
-  const assignment = await prisma.courseTutor.findFirst({
-    where: {
-      courseId,
-      isActive: true,
-      tutor: { userId },
-    },
-    select: { courseTutorId: true },
-  });
+  const hasAccess = await activityRepo.checkTutorAccess(userId, courseId);
 
-  if (!assignment) {
+  if (!hasAccess) {
     throw Object.assign(new Error("Tutor is not assigned to this course"), { status: 403 });
   }
 }
@@ -207,3 +143,4 @@ function deriveStatusFromEvents(events: LearnerStatusRow[]): LearnerStatusRow | 
   }
   return fallback;
 }
+

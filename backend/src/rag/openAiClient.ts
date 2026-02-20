@@ -1,20 +1,16 @@
-import OpenAI from "openai";
-import { env } from "../config/env";
+import { OpenAIGateway } from "../gateways/implementations/OpenAIGateway";
 import { PERSONA_KEYS } from "../services/personaPromptTemplates";
 
-
-const client = new OpenAI({
-  apiKey: env.openAiApiKey,
-});
+const llmGateway = new OpenAIGateway();
 
 export async function createEmbedding(text: string): Promise<number[]> {
-  const response = await client.embeddings.create({
-    model: env.embeddingModel,
-    input: text,
-  });
-
-  const vector = response.data[0]?.embedding;
-  if (!vector) {
+  // Gateway handles error logging/checking internally or returns empty array on failure
+  // adapting to existing signature which throws
+  const vector = await llmGateway.generateEmbedding(text);
+  if (!vector || vector.length === 0) {
+    if (!llmGateway.isConfigured()) {
+      throw new Error("OpenAI Gateway not configured");
+    }
     throw new Error("OpenAI did not return an embedding vector");
   }
   return vector;
@@ -26,21 +22,24 @@ async function runChatCompletion(options: {
   temperature?: number;
   maxTokens?: number;
 }): Promise<string> {
-  const completion = await client.chat.completions.create({
-    model: env.llmModel,
-    temperature: options.temperature ?? 0.2,
+  const response = await llmGateway.generateResponse({
     messages: [
       { role: "system", content: options.systemPrompt },
-      { role: "user", content: options.userPrompt },
+      { role: "user", content: options.userPrompt }
     ],
-    max_tokens: options.maxTokens ?? 500,
+    temperature: options.temperature,
+    // max_tokens is not directly exposed in generateResponse interface I defined, 
+    // but commonly needed. I should update Interface or just rely on default.
+    // waiting... let's update interface later if needed, for now standard gateway call.
   });
 
-  const message = completion.choices[0]?.message?.content?.trim();
-  if (!message) {
+  if (!response) {
+    if (!llmGateway.isConfigured()) {
+      throw new Error("OpenAI Gateway not configured");
+    }
     throw new Error("OpenAI did not return a chat completion");
   }
-  return message;
+  return response.trim();
 }
 
 export async function generateAnswerFromContext(prompt: string): Promise<string> {

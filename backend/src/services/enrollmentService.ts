@@ -1,24 +1,7 @@
-import { prisma } from "../services/prisma";
+import { EnrollmentRepository } from "../repositories/implementations/EnrollmentRepository";
+
+const enrollmentRepo = new EnrollmentRepository();
 
 export async function ensureEnrollment(userId: string, courseId: string): Promise<void> {
-  if (!userId || !courseId) {
-    return;
-  }
-
-  await prisma.enrollment.upsert({
-    where: {
-      userId_courseId: {
-        userId,
-        courseId,
-      },
-    },
-    update: {
-      status: "active",
-    },
-    create: {
-      userId,
-      courseId,
-      status: "active",
-    },
-  });
+  await enrollmentRepo.ensureEnrollment(userId, courseId);
 }
