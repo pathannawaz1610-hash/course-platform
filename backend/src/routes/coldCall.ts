@@ -1,9 +1,8 @@
 import express from "express";
 import { asyncHandler } from "../utils/asyncHandler";
-import { prisma } from "../services/prisma"; // Still used for user/course lookup in helpers if strictly needed, or simpler to keep standard.
-// Actually standardizing to use repositories where possible.
+
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
-import { COHORT_ACCESS_DENIED_MESSAGE } from "../services/cohortAccess";
+import { resolveCohortMembership, MembershipDecision } from "../services/cohortAccess";
 import { ColdCallRepository } from "../repositories/implementations/ColdCallRepository";
 import { CohortRepository } from "../repositories/implementations/CohortRepository";
 
@@ -11,54 +10,6 @@ const coldCallRouter = express.Router();
 const coldCallRepo = new ColdCallRepository();
 const cohortRepo = new CohortRepository();
 
-const ACTIVE_MEMBER_STATUS = "active";
-
-type MembershipDecision =
-  | { allowed: true; cohortId: string; cohortName: string; batchNo: number }
-  | { allowed: false; status: number; message: string };
-
-const normalizeEmail = (value: string) => value.trim().toLowerCase();
-
-async function resolveCohortMembership(courseId: string, userId: string): Promise<MembershipDecision> {
-  const cohorts = await cohortRepo.findCohortsForCourse(courseId);
-
-  if (cohorts.length === 0) {
-    return { allowed: false, status: 409, message: "Cohort access is not configured for this course." };
-  }
-
-  // User lookup still via prisma or I should add getUser to a repo.
-  // Using prisma for User lookup is fine as established in cohortProjects.ts
-  const user = await prisma.user.findUnique({
-    where: { userId },
-    select: { email: true },
-  });
-
-  if (!user?.email) {
-    return { allowed: false, status: 401, message: "Unauthorized" };
-  }
-
-  const normalizedEmail = normalizeEmail(user.email);
-  const cohortIds = cohorts.map((cohort) => cohort.cohortId);
-
-  const member = await cohortRepo.findCohortMember(userId, normalizedEmail, cohortIds);
-
-  if (!member) {
-    return { allowed: false, status: 403, message: COHORT_ACCESS_DENIED_MESSAGE };
-  }
-
-  if (!member.userId || member.email !== normalizedEmail) {
-    await cohortRepo.updateCohortMember(member.memberId, { userId, email: normalizedEmail });
-  }
-
-  const batchNo = typeof member.batchNo === "number" && member.batchNo > 0 ? member.batchNo : 1;
-
-  return {
-    allowed: true,
-    cohortId: member.cohort.cohortId,
-    cohortName: member.cohort.name,
-    batchNo,
-  };
-}
 
 coldCallRouter.get(
   "/prompts/:topicId",

@@ -68,9 +68,9 @@ export default function AuthCallbackPage() {
 
     const session = {
       accessToken,
-      accessTokenExpiresAt,
+      accessTokenExpiresAt: accessTokenExpiresAt ?? "",
       refreshToken,
-      refreshTokenExpiresAt,
+      refreshTokenExpiresAt: refreshTokenExpiresAt ?? "",
       sessionId,
       userId: userId ?? undefined,
       email: userEmail ?? undefined,

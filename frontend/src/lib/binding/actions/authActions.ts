@@ -99,6 +99,7 @@ export async function logout(session: Session): Promise<void> {
         "/auth/logout",
         {
             method: "POST",
+            body: { refreshToken: session.refreshToken },
         },
         session
     );

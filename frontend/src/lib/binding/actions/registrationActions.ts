@@ -3,9 +3,6 @@ import { apiClient } from "../client";
 /**
  * Fetch registration offerings
  */
-/**
- * Fetch registration offerings
- */
 export async function fetchOfferings(params: {
     courseSlug?: string;
     courseId?: string;
@@ -22,9 +19,10 @@ export async function fetchOfferings(params: {
 }
 
 /**
- * Fetch assessment questions for registration
+ * Fetch assessment questions for a registration offering.
+ * Named distinctly from courseActions.fetchAssessmentQuestions to avoid barrel export conflict.
  */
-export async function fetchAssessmentQuestions(params: {
+export async function fetchRegistrationAssessmentQuestions(params: {
     offeringId: string;
     programType: "cohort" | "ondemand" | "workshop";
 }): Promise<{ questions: any[] }> {

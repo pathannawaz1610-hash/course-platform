@@ -69,7 +69,7 @@ const formatDurationFromMinutes = (minutes?: number): string => {
     return `${hours}h ${remaining}m`;
 };
 
-const mapCourseSummaryToCourse = (course: CourseSummary): Course => {
+const mapCourseSummaryToCourse = (course: CourseSummary | { id: string; title: string; description: string; price?: number; priceCents?: number; category?: string; level?: string; instructor?: string; durationLabel?: string; durationMinutes?: number; rating?: number; students?: number; studentsCount?: number; thumbnail?: string | null }): Course => {
     const normalizedPrice =
         typeof course.price === 'number'
             ? course.price
@@ -83,7 +83,7 @@ const mapCourseSummaryToCourse = (course: CourseSummary): Course => {
         duration: course.durationLabel ?? formatDurationFromMinutes(course.durationMinutes),
         price: normalizedPrice,
         level: (course.level as Course['level']) ?? 'Beginner',
-        students: course.students ?? 0,
+        students: course.students ?? (course as any).studentsCount ?? 0,
         rating: course.rating ?? 0,
         category: course.category ?? 'AI & Technology',
         thumbnail: course.thumbnail ?? '',
@@ -634,7 +634,7 @@ export default function DashboardPage() {
                 onLogout: handleLogout,
                 onLoginClick: () => setShowAuthModal(true),
             }}
-            mainProps={{ 'data-testid': 'page-dashboard' }}
+            mainProps={{ 'data-testid': 'page-dashboard' } as any}
         >
             {/* --- HERO SECTION --- */}
             <section className="grid lg:grid-cols-[1.2fr_1fr] gap-7 items-center pt-8 px-2 sm:px-4 lg:px-2 relative">

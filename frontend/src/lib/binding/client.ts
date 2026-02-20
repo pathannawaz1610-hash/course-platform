@@ -9,6 +9,7 @@ export interface RequestOptions {
 
 export interface Session {
     accessToken: string;
+    refreshToken?: string;
 }
 
 /**

@@ -70,6 +70,11 @@ export interface ICourseRepository {
 
     findCourseIdByPossibleNames(names: string[]): Promise<string | null>;
 
+    /**
+     * Standardized resolver for course keys (UUIDs, legacy slugs, or normalized names)
+     */
+    resolveCourseIdByFuzzyKey(key: string): Promise<string | null>;
+
     getCourseTopics(courseId: string): Promise<TopicSummary[]>;
 
     getModuleTopics(moduleNo: number): Promise<TopicSummary[]>; // For strict module fetching

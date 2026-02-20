@@ -202,7 +202,7 @@ const CourseDetailsPage: React.FC = () => {
     const loadCourse = async () => {
       try {
         // ✅ UPDATED: Use courseActions instead of direct fetch
-        const payload = await fetchCourse(courseId);
+        const payload = await fetchCourse(courseId) as any;
         if (mounted) {
           const course = payload?.course || payload;
           const slug = course?.slug ?? courseId;

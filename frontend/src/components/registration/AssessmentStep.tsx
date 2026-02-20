@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { fetchAssessmentQuestions, submitRegistration } from '@/lib/binding/actions/registrationActions'
+import { fetchRegistrationAssessmentQuestions, submitRegistration } from '@/lib/binding/actions/registrationActions'
 import { AssessmentStepProps, Question, Answer, FormErrors } from '@/types/registration'
 
 const AssessmentStep = ({ onSubmit, studentData }: AssessmentStepProps) => {
@@ -25,7 +25,7 @@ const AssessmentStep = ({ onSubmit, studentData }: AssessmentStepProps) => {
                 }
 
                 const programType = studentData.programType || 'cohort'
-                const { questions: data } = await fetchAssessmentQuestions({
+                const { questions: data } = await fetchRegistrationAssessmentQuestions({
                     offeringId: studentData.offeringId,
                     programType,
                 })

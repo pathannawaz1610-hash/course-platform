@@ -99,6 +99,49 @@ export class CourseRepository implements ICourseRepository {
         return course?.courseId ?? null;
     }
 
+    async resolveCourseIdByFuzzyKey(key: string): Promise<string | null> {
+        const trimmed = key.trim();
+        if (!trimmed) return null;
+
+        // 1. Direct UUID check
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        if (uuidRegex.test(trimmed)) {
+            return trimmed;
+        }
+
+        // 2. Legacy Slug Aliases
+        const legacySlugs: Record<string, string> = {
+            "ai-native-fullstack-developer": "f26180b2-5dda-495a-a014-ae02e63f172f",
+        };
+
+        let decoded = trimmed;
+        try {
+            decoded = decodeURIComponent(trimmed).trim();
+        } catch { /* use raw if decode fails */ }
+
+        const normalizedSlug = decoded.toLowerCase();
+        if (legacySlugs[normalizedSlug]) {
+            return legacySlugs[normalizedSlug];
+        }
+
+        // 3. Name Normalization and Multi-search
+        const normalizedName = decoded.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+        const searchList = Array.from(new Set([decoded, normalizedName])).filter(n => n.length > 0);
+
+        if (searchList.length === 0) return null;
+
+        const course = await this.db.course.findFirst({
+            where: {
+                OR: searchList.map(name => ({
+                    courseName: { equals: name, mode: "insensitive" as const }
+                }))
+            },
+            select: { courseId: true }
+        });
+
+        return course?.courseId ?? null;
+    }
+
     async getCourseTopics(courseId: string): Promise<TopicSummary[]> {
         const rows = await this.db.topic.findMany({
             where: { courseId },

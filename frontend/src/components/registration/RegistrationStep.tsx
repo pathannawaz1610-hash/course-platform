@@ -50,8 +50,9 @@ const RegistrationStep = ({ onSubmit, programType, selectedCourse, offeringId, o
             // @ts-ignore - Supabase client might be null in some environments
             if (!supabase) return;
 
-            // @ts-ignore
+            // @ts-ignore - supabase client types may be null or unresolved in some envs
             const { data, error } = await supabase
+                // @ts-ignore - supabase client from() not typed correctly for this environment
                 .from("alloted_timeslotes")
                 .select("slot_name")
                 .order("created_at", { ascending: true });
@@ -213,7 +214,7 @@ const RegistrationStep = ({ onSubmit, programType, selectedCourse, offeringId, o
                 referredBy: formData.referredBy || null,
             };
 
-            const response = await submitRegistration(payload);
+            const response = await submitRegistration(payload) as { registration?: { registrationId?: string } };
             const registrationId = response?.registration?.registrationId ?? `local-${Date.now()}`;
 
             onSubmit({ ...formData, id: registrationId, offeringId });

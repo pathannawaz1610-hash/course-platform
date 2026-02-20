@@ -3,7 +3,6 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
 import { ensureEnrollment } from "../services/enrollmentService";
 import { checkCohortAccessForUser } from "../services/cohortAccess";
-import { resolveCourseId } from "../services/courseResolutionService";
 import { CourseRepository } from "../repositories/implementations/CourseRepository";
 
 const coursesRouter = express.Router();
@@ -20,7 +19,7 @@ coursesRouter.get(
 coursesRouter.get(
   "/:courseKey",
   asyncHandler(async (req, res) => {
-    const courseId = await resolveCourseId(req.params.courseKey);
+    const courseId = await courseRepo.resolveCourseIdByFuzzyKey(req.params.courseKey);
 
     if (!courseId) {
       res.status(404).json({ message: "Course not found" });
@@ -60,7 +59,7 @@ coursesRouter.post(
   "/:courseKey/enroll",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const courseId = await resolveCourseId(req.params.courseKey);
+    const courseId = await courseRepo.resolveCourseIdByFuzzyKey(req.params.courseKey);
 
     if (!courseId) {
       res.status(404).json({ message: "Course not found" });

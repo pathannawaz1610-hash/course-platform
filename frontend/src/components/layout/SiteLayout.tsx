@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { HTMLAttributes, ReactNode } from "react";
+import type { HTMLProps, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { DASHBOARD_CARD_SHADOW, DASHBOARD_GRADIENT_BG, FONT_INTER_STACK } from "@/constants/theme";
 import { SiteHeader, type SiteHeaderProps } from "./SiteHeader";
@@ -10,7 +10,7 @@ interface SiteLayoutProps {
   showHeader?: boolean;
   className?: string;
   contentClassName?: string;
-  mainProps?: HTMLAttributes<HTMLElement>;
+  mainProps?: HTMLProps<HTMLElement>;
 }
 
 export function SiteLayout({

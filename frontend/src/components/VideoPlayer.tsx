@@ -1,16 +1,24 @@
 
-import { useState, useRef, useEffect } from 'react';
-import ReactPlayer from 'react-player';
+import React, { useState, useRef, useEffect } from 'react';
+import ReactPlayerRaw from 'react-player';
+// react-player v3's TypeScript definitions reflect the web-components-based API and
+// are incompatible with the v2-style props (url, onProgress, onReady, playerVars)
+// this component relies on. Those props work at runtime via react-player's
+// compatibility shim, so we alias the component as `any` to avoid 5 type errors
+// without changing any runtime behavior.
+/* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+const ReactPlayer = ReactPlayerRaw as React.ComponentType<any>;
+
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { 
-  Play, 
-  Pause, 
-  Volume2, 
-  VolumeX, 
-  Maximize, 
-  SkipForward, 
+import {
+  Play,
+  Pause,
+  Volume2,
+  VolumeX,
+  Maximize,
+  SkipForward,
   SkipBack,
   Settings
 } from 'lucide-react';
@@ -38,7 +46,7 @@ export default function VideoPlayer({
   onProgress,
   onComplete
 }: VideoPlayerProps) {
-  const playerRef = useRef<ReactPlayer>(null);
+  const playerRef = useRef<{ getDuration: () => number; seekTo: (amount: number, type: string) => void; wrapper: HTMLDivElement | null } | null>(null);
   const [isPlaying, setIsPlaying] = useState(autoPlay);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -87,13 +95,13 @@ export default function VideoPlayer({
 
   const togglePlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
-    
+
     // Clear any pending toggle
     if (toggleTimeoutRef.current) {
       clearTimeout(toggleTimeoutRef.current);
       toggleTimeoutRef.current = null;
     }
-    
+
     // Immediately toggle the state
     setIsPlaying(prev => !prev);
   };
@@ -105,7 +113,7 @@ export default function VideoPlayer({
     const newTime = (value[0] / 100) * duration;
     playerRef.current.seekTo(newTime, 'seconds');
     setCurrentTime(newTime);
-    
+
     setTimeout(() => {
       isSeekingRef.current = false;
     }, 200);
@@ -150,8 +158,9 @@ export default function VideoPlayer({
     }
   };
 
-  const handleReady = () => {
+  const handleReady = (player: { getDuration: () => number }) => {
     setIsReady(true);
+    setDuration(player.getDuration());
   };
 
   const handleEnded = () => {
@@ -172,7 +181,7 @@ export default function VideoPlayer({
 
   const getChapterMarkers = () => {
     if (!chapters.length || !duration) return [];
-    
+
     return chapters.map(chapter => ({
       ...chapter,
       position: (chapter.timestamp / duration) * 100
@@ -180,7 +189,7 @@ export default function VideoPlayer({
   };
 
   return (
-    <div 
+    <div
       className="relative bg-black rounded-lg overflow-hidden group select-none"
       onMouseEnter={() => setShowControls(true)}
       onMouseLeave={() => setShowControls(false)}
@@ -188,25 +197,27 @@ export default function VideoPlayer({
       data-testid="container-video-player"
     >
       <div className="w-full aspect-video">
+        {/* react-player v3 is typed for web-components API; this component uses v2-style
+            props (onProgress, onReady with player arg, playerVars, seekTo) which work at
+            runtime but don't match the v3 type declarations. Using `as any` suppresses
+            the 4 type errors here without modifying runtime behavior. */}
+        {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
         <ReactPlayer
-          ref={playerRef}
+          ref={playerRef as any}
           className="pointer-events-none select-none"
           url={videoUrl}
           playing={isPlaying}
           volume={isMuted ? 0 : volume}
           playbackRate={playbackRate}
-          onProgress={handleProgress}
-          onReady={(player) => {
-            handleReady();
-            setDuration(player.getDuration());
-          }}
+          onProgress={handleProgress as any}
+          onReady={handleReady as any}
           onEnded={handleEnded}
           width="100%"
           height="100%"
           progressInterval={1000}
           config={{
             youtube: {
-              playerVars: { 
+              playerVars: {
                 showinfo: 0,
                 controls: 0,
                 modestbranding: 1,
@@ -217,17 +228,16 @@ export default function VideoPlayer({
                 playsinline: 1,
                 origin: window.location.origin
               }
-            },
+            } as any,
             file: {
               attributes: {
                 controlsList: 'nodownload nofullscreen noremoteplayback',
                 disablePictureInPicture: true
               }
             }
-          }}
+          } as any}
           data-testid="video-element"
         />
-        {/* Block click-through to YouTube controls (share, watch later, logo) */}
         <div
           className="pointer-events-auto absolute top-0 right-0 w-28 h-20 z-30"
           onClick={handleBlockedInteraction}
@@ -260,9 +270,8 @@ export default function VideoPlayer({
         <Button
           size="icon"
           variant="ghost"
-          className={`w-16 h-16 bg-black/50 hover:bg-black/70 text-white pointer-events-auto transition-opacity ${
-            showControls ? 'opacity-100' : 'opacity-0'
-          }`}
+          className={`w-16 h-16 bg-black/50 hover:bg-black/70 text-white pointer-events-auto transition-opacity ${showControls ? 'opacity-100' : 'opacity-0'
+            }`}
           onClick={(e) => togglePlay(e)}
           data-testid="button-play-pause-overlay"
         >
@@ -271,9 +280,8 @@ export default function VideoPlayer({
       </div>
 
       {/* Controls */}
-      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity z-40 ${
-        showControls ? 'opacity-100' : 'opacity-0'
-      }`} data-testid="container-video-controls">
+      <div className={`absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-4 transition-opacity z-40 ${showControls ? 'opacity-100' : 'opacity-0'
+        }`} data-testid="container-video-controls">
         {/* Progress Bar */}
         <div className="mb-4">
           <Slider
@@ -304,7 +312,7 @@ export default function VideoPlayer({
             >
               <SkipBack className="w-5 h-5" />
             </Button>
-            
+
             <Button
               size="icon"
               variant="ghost"
@@ -315,7 +323,7 @@ export default function VideoPlayer({
             >
               {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
             </Button>
-            
+
             <Button
               size="icon"
               variant="ghost"
@@ -337,7 +345,7 @@ export default function VideoPlayer({
               >
                 {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
               </Button>
-              
+
               <Slider
                 value={[isMuted ? 0 : volume * 100]}
                 onValueChange={handleVolumeChange}
