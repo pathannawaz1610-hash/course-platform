@@ -30,21 +30,21 @@ export default function AssessmentPage() {
   const [assessmentResults, setAssessmentResults] = useState<any>(null);
 
   // Fetch course data by slug
-  const { data: courseResponse, isLoading: courseLoading } = useQuery<{ course: Course }>({
-    queryKey: [`/api/courses/${courseId}`],
+  const { data: course, isLoading: courseLoading } = useQuery<Course>({
+    queryKey: ['course', courseId],
+    queryFn: () => fetchCourse(courseId!),
     enabled: !!courseId,
   });
-  const course = courseResponse?.course;
 
   // Fetch assessment questions using course ID
-  const { data: assessmentData, isLoading: questionsLoading } = useQuery<{ questions: AssessmentQuestion[] }>({
+  const { data: questions = [], isLoading: questionsLoading } = useQuery<AssessmentQuestion[]>({
     queryKey: ['assessment-questions', course?.id],
     queryFn: () => fetchAssessmentQuestions(course?.id!),
     enabled: !!course?.id,
   });
 
   // Extract questions array from response
-  const questions = assessmentData?.questions || [];
+  // questions is already the array due to destructuring with default above
 
   // Submit assessment mutation
   const submitAssessmentMutation = useMutation({

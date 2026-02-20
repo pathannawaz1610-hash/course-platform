@@ -25,9 +25,14 @@ export class APIClient {
         session?: Session | null
     ): Promise<T> {
         const headers: Record<string, string> = {
-            "Content-Type": "application/json",
             ...options.headers,
         };
+
+        // Only add Content-Type if we have a body or if it's explicitly needed
+        // This prevents unnecessary preflight requests for GETs
+        if (options.body && !headers["Content-Type"]) {
+            headers["Content-Type"] = "application/json";
+        }
 
         if (session?.accessToken) {
             headers.Authorization = `Bearer ${session.accessToken}`;

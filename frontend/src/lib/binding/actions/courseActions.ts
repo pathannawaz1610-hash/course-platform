@@ -1,17 +1,5 @@
 import { apiClient, type Session } from "../client";
-
-/**
- * Course data
- */
-export interface Course {
-    id: string;
-    slug: string;
-    title: string;
-    description?: string;
-    price?: number;
-    priceCents?: number;
-    [key: string]: any;
-}
+import type { Course, AssessmentQuestion } from "@/types/content";
 
 /**
  * Topic/Lesson data
@@ -42,7 +30,8 @@ export interface CourseSection {
  * Fetch a single course by ID or slug
  */
 export async function fetchCourse(courseId: string): Promise<Course> {
-    return apiClient.request<Course>(`/api/courses/${courseId}`);
+    const data = await apiClient.request<{ course: Course }>(`/api/courses/${courseId}`);
+    return data.course;
 }
 
 /**
@@ -64,7 +53,8 @@ export async function fetchCourseTopics(
  * Fetch all available courses
  */
 export async function fetchCourses(signal?: AbortSignal): Promise<Course[]> {
-    return apiClient.request<Course[]>("/courses", { signal });
+    const data = await apiClient.request<{ courses: Course[] }>("/api/courses", { signal });
+    return data.courses;
 }
 
 /**
@@ -139,8 +129,9 @@ export async function fetchCohortProject(
 /**
  * Fetch assessment questions for a course
  */
-export async function fetchAssessmentQuestions(courseId: string): Promise<{ questions: any[] }> {
-    return apiClient.request<{ questions: any[] }>(`/api/courses/${courseId}/assessment`);
+export async function fetchAssessmentQuestions(courseId: string): Promise<AssessmentQuestion[]> {
+    const data = await apiClient.request<{ questions: AssessmentQuestion[] }>(`/api/courses/${courseId}/assessment`);
+    return data.questions;
 }
 
 /**

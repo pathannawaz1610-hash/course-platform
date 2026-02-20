@@ -1,36 +1,36 @@
 import { QueryClient, QueryFunction } from "@tanstack/react-query";
-import { buildApiUrl } from "@/lib/api";
+import { apiClient } from "@/lib/binding/client";
+import { readStoredSession } from "@/utils/session";
 
-
-
-async function throwIfResNotOk(res: Response) {
-  if (!res.ok) {
-    const text = (await res.text()) || res.statusText;
-    throw new Error(`${res.status}: ${text}`);
-  }
-}
-
-type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {
-  on401: UnauthorizedBehavior;
+  on401: "throw" | "returnNull";
 }) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
+  ({ on401 }) =>
     async ({ queryKey }) => {
-      const firstSegment = queryKey[0];
-      if (typeof firstSegment !== "string") {
+      const path = queryKey[0];
+      if (typeof path !== "string") {
         throw new Error("Query key must start with a string path");
       }
 
-      const res = await fetch(buildApiUrl(firstSegment), {
-        credentials: "include",
-      });
+      // Extract query params from the second element if it exists and is an object
+      // This supports passing options like { headers: ... } if needed, though rare with GET
+      const options = (queryKey[1] as Record<string, any>) || {};
 
-      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-        return null;
+      const session = readStoredSession();
+
+      try {
+        return await apiClient.request(path, {
+          method: "GET",
+          // We can spread options here if we want to support overriding headers via queryKey
+          // checking if options has valid RequestOptions properties
+          ...options
+        }, session);
+      } catch (error: any) {
+        if (on401 === "returnNull" && error?.status === 401) {
+          return null;
+        }
+        throw error;
       }
-
-      await throwIfResNotOk(res);
-      return await res.json();
     };
 
 export const queryClient = new QueryClient({

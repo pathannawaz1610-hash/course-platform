@@ -1,7 +1,7 @@
 import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { login, signup } from '@/lib/binding/actions/authActions';
-import { enrollInCourse, fetchCourseSections } from '@/lib/binding/actions/courseActions';
+import { enrollInCourse, fetchCourseSections, fetchCourse } from '@/lib/binding/actions/courseActions';
 import EnrollmentGateway from '@/components/EnrollmentGateway';
 import { useToast } from '@/hooks/use-toast';
 import { buildApiUrl } from '@/lib/api';
@@ -15,10 +15,13 @@ export default function EnrollmentPage() {
   const { toast } = useToast();
 
   // Fetch course data
-  const { data: courseInfo, isLoading: courseLoading, error } = useQuery<{ course: CourseSummary }>({
-    queryKey: [`/api/courses/${id}`],
+  const { data: course, isLoading: courseLoading, error } = useQuery({
+    queryKey: ['course', id],
+    queryFn: () => fetchCourse(id!),
     enabled: !!id,
   });
+
+  const courseInfo = course ? { course } : undefined;
 
   // Login mutation
   const loginMutation = useMutation({
@@ -168,9 +171,9 @@ export default function EnrollmentPage() {
     description: courseInfo.course.description,
     instructor: courseInfo.course.instructor ?? 'Ottolearn Instructor',
     rating: courseInfo.course.rating ?? 0,
-    students: courseInfo.course.students ?? 0,
+    students: courseInfo.course.studentsCount ?? 0,
     duration: courseInfo.course.durationLabel ?? 'Self-paced',
-    price: courseInfo.course.price,
+    price: courseInfo.course.price ?? 0,
     originalPrice: undefined,
   };
 

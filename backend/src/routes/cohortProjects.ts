@@ -3,14 +3,15 @@ import { asyncHandler } from "../utils/asyncHandler";
 import { prisma } from "../services/prisma";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
 import { COHORT_ACCESS_DENIED_MESSAGE } from "../services/cohortAccess";
+import { CohortRepository } from "../repositories/implementations/CohortRepository";
 
 const cohortProjectsRouter = express.Router();
+const cohortRepo = new CohortRepository();
 
 const LEGACY_COURSE_SLUGS: Record<string, string> = {
   "ai-native-fullstack-developer": "f26180b2-5dda-495a-a014-ae02e63f172f",
 };
 
-const ACTIVE_MEMBER_STATUS = "active";
 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type CourseResolution =
@@ -23,6 +24,7 @@ type MembershipDecision =
 
 const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
+// This duplication of course resolution could be extracted to a service eventually
 async function resolveCourseIdOrError(courseKeyRaw: string | undefined): Promise<CourseResolution> {
   const courseKey = courseKeyRaw?.trim();
   if (!courseKey) {
@@ -59,6 +61,8 @@ async function resolveCourseIdOrError(courseKeyRaw: string | undefined): Promise
     return { errorStatus: 400, errorMessage: "Course identifier is required" };
   }
 
+  // Still using Prisma here for Course lookup as it's not CohortRepo responsibility
+  // and CourseRepo isn't fully integrated yet for this specific fuzzy search logic.
   const courseRecord = await prisma.course.findFirst({
     where: {
       OR: searchNames.map((name) => ({
@@ -79,10 +83,7 @@ async function resolveCourseIdOrError(courseKeyRaw: string | undefined): Promise
 }
 
 async function resolveCohortMembership(courseId: string, userId: string): Promise<MembershipDecision> {
-  const cohorts = await prisma.cohort.findMany({
-    where: { courseId, isActive: true },
-    select: { cohortId: true, name: true },
-  });
+  const cohorts = await cohortRepo.findCohortsForCourse(courseId);
 
   if (cohorts.length === 0) {
     return { allowed: false, status: 409, message: "Cohort access is not configured for this course." };
@@ -100,26 +101,14 @@ async function resolveCohortMembership(courseId: string, userId: string): Promis
   const normalizedEmail = normalizeEmail(user.email);
   const cohortIds = cohorts.map((cohort) => cohort.cohortId);
 
-  const member = await prisma.cohortMember.findFirst({
-    where: {
-      cohortId: { in: cohortIds },
-      status: ACTIVE_MEMBER_STATUS,
-      OR: [{ userId }, { email: { equals: normalizedEmail, mode: "insensitive" } }],
-    },
-    include: {
-      cohort: { select: { cohortId: true, name: true } },
-    },
-  });
+  const member = await cohortRepo.findCohortMember(userId, normalizedEmail, cohortIds);
 
   if (!member) {
     return { allowed: false, status: 403, message: COHORT_ACCESS_DENIED_MESSAGE };
   }
 
   if (!member.userId || member.email !== normalizedEmail) {
-    await prisma.cohortMember.update({
-      where: { memberId: member.memberId },
-      data: { userId, email: normalizedEmail },
-    });
+    await cohortRepo.updateCohortMember(member.memberId, { userId, email: normalizedEmail });
   }
 
   const batchNo = typeof member.batchNo === "number" && member.batchNo > 0 ? member.batchNo : 1;
@@ -154,10 +143,7 @@ cohortProjectsRouter.get(
       return;
     }
 
-    const project = await prisma.cohortBatchProject.findFirst({
-      where: { cohortId: membership.cohortId, batchNo: membership.batchNo },
-      select: { projectId: true, batchNo: true, payload: true, updatedAt: true },
-    });
+    const project = await cohortRepo.findCohortBatchProject(membership.cohortId, membership.batchNo);
 
     if (!project) {
       res.status(404).json({ message: "Cohort project not assigned yet." });

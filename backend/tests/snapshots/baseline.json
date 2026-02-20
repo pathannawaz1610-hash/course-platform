@@ -1,0 +1,36 @@
+{
+  "GET /api/courses": {
+    "status": 200,
+    "type": "application/json",
+    "body": {
+      "courses": [
+        {
+          "id": "f26180b2-5dda-495a-a014-ae02e63f172f",
+          "slug": "ai-native-fullstack-developer",
+          "title": "AI Native FullStack Developer",
+          "description": "Master the integration of AI technologies in modern web development while building a complete end-to-end application with guided prompts and real project workflows.",
+          "price": 3999,
+          "priceCents": 399900,
+          "createdAt": "2025-10-02T01:58:19.930Z"
+        }
+      ]
+    }
+  },
+  "GET /api/health": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "database": "connected"
+    }
+  },
+  "GET /api/cold-call/prompts/fake-id": {
+    "status": 401,
+    "body": {
+      "message": "Authorization header is missing"
+    }
+  },
+  "POST /api/tutors/login": {
+    "status": 404,
+    "body": {}
+  }
+}

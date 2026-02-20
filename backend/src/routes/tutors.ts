@@ -1,26 +1,19 @@
 import express from "express";
-import { Prisma } from "@prisma/client";
 import { asyncHandler } from "../utils/asyncHandler";
-import { prisma } from "../services/prisma";
 import { requireAuth, type AuthenticatedRequest } from "../middleware/requireAuth";
 import { requireTutor } from "../middleware/requireRole";
 import { verifyPassword } from "../utils/password";
 import { createSession } from "../services/sessionService";
 import { buildTutorCourseSnapshot, formatTutorSnapshot } from "../services/tutorInsights";
 import { generateTutorCopilotAnswer } from "../rag/openAiClient";
+import { TutorRepository } from "../repositories/implementations/TutorRepository";
 
 const tutorsRouter = express.Router();
+const tutorRepo = new TutorRepository();
 
+// Helper to check assignment
 async function isTutorForCourse(userId: string, courseId: string): Promise<boolean> {
-  const assignment = await prisma.courseTutor.findFirst({
-    where: {
-      courseId,
-      isActive: true,
-      tutor: { userId },
-    },
-    select: { courseTutorId: true },
-  });
-  return Boolean(assignment);
+  return tutorRepo.verifyTutorAssignment(userId, courseId);
 }
 
 tutorsRouter.post(
@@ -34,22 +27,7 @@ tutorsRouter.post(
       return;
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email },
-      select: {
-        userId: true,
-        email: true,
-        fullName: true,
-        role: true,
-        passwordHash: true,
-        tutorProfile: {
-          select: {
-            tutorId: true,
-            displayName: true,
-          },
-        },
-      },
-    });
+    const user = await tutorRepo.findTutorByEmail(email);
 
     if (!user || (user.role !== "tutor" && user.role !== "admin")) {
       res.status(403).json({ message: "Tutor account required" });
@@ -147,30 +125,15 @@ tutorsRouter.get(
       return;
     }
 
-    const courses = await prisma.courseTutor.findMany({
-      where: {
-        isActive: true,
-        tutor: { userId: auth.userId },
-      },
-      include: {
-        course: {
-          select: {
-            courseId: true,
-            courseName: true,
-            slug: true,
-            description: true,
-          },
-        },
-      },
-    });
+    const courses = await tutorRepo.getAssignedCourses(auth.userId);
 
     res.status(200).json({
-      courses: courses.map((entry) => ({
-        courseId: entry.course.courseId,
-        slug: entry.course.slug,
-        title: entry.course.courseName,
-        description: entry.course.description,
-        role: entry.role,
+      courses: courses.map((course) => ({
+        courseId: course.courseId,
+        slug: course.slug,
+        title: course.courseName,
+        description: course.description,
+        role: course.role,
       })),
     });
   }),
@@ -194,31 +157,16 @@ tutorsRouter.get(
       return;
     }
 
-    const enrollments = await prisma.enrollment.findMany({
-      where: { courseId },
-      select: {
-        enrollmentId: true,
-        enrolledAt: true,
-        status: true,
-        user: {
-          select: {
-            userId: true,
-            fullName: true,
-            email: true,
-          },
-        },
-      },
-      orderBy: { enrolledAt: "desc" },
-    });
+    const enrollments = await tutorRepo.getCourseEnrollments(courseId);
 
     res.status(200).json({
       enrollments: enrollments.map((enrollment) => ({
         enrollmentId: enrollment.enrollmentId,
         enrolledAt: enrollment.enrolledAt,
         status: enrollment.status,
-        userId: enrollment.user.userId,
-        fullName: enrollment.user.fullName,
-        email: enrollment.user.email,
+        userId: enrollment.userId,
+        fullName: enrollment.fullName,
+        email: enrollment.email,
       })),
     });
   }),
@@ -242,28 +190,11 @@ tutorsRouter.get(
       return;
     }
 
-    const moduleNumbers = await prisma.topic.findMany({
-      where: { courseId, moduleNo: { gt: 0 } },
-      select: { moduleNo: true },
-      distinct: ["moduleNo"],
-      orderBy: { moduleNo: "asc" },
-    });
+    const moduleNumbers = await tutorRepo.getCourseModuleNumbers(courseId);
     const totalModules = moduleNumbers.length;
 
-    const enrolledUsers = await prisma.enrollment.findMany({
-      where: { courseId },
-      select: {
-        userId: true,
-        enrolledAt: true,
-        user: { select: { fullName: true, email: true } },
-      },
-    });
-
-    const progressRows = await prisma.$queryRaw<{ user_id: string; module_no: number; quiz_passed: boolean }[]>(Prisma.sql`
-      SELECT user_id, module_no, quiz_passed
-      FROM module_progress
-      WHERE course_id = ${courseId}::uuid
-    `);
+    const enrolledUsers = await tutorRepo.getCourseLearners(courseId);
+    const progressRows = await tutorRepo.getModuleProgress(courseId);
 
     const progressByUser = new Map<string, { passedModules: Set<number> }>();
     progressRows.forEach((row) => {
